@@ -55,7 +55,7 @@ try {
     if (known?.efforts && !known.efforts.includes(choice.effort)) throw new Error(`Unsupported ${name} effort ${choice.effort}`);
     next[name]={...(current[name]??{}),provider:lane.provider,model:choice.model};
     if (name==='routine'||name==='complex') next[name].effort=choice.effort;
-    else delete next[name].effort;
+    // Broad/reviewer effort is not used by this plugin; preserve stored metadata.
   }
   const backup=existsSync(target)?`${target}.backup-${Date.now()}-${process.pid}`:null;
   writeFileSync(temp,JSON.stringify(next,null,2)+'\n',{mode:0o600,flag:'wx'});

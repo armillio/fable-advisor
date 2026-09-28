@@ -277,6 +277,18 @@ check('invalid config cannot invoke default broad model', () => {
   const r=fixture('invalid-config',undefined,{config:{broad:null}});
   assert(r.status!==0 && r.stdout.includes('STATUS: unavailable') && !existsSync(join(r.dir,'output.txt')),r.stdout);
 });
+check('saving choices preserves unused broad and reviewer effort metadata', () => {
+  const target=join(temp,'unused-efforts.json');
+  writeFileSync(target,JSON.stringify({version:2,broad:{effort:'custom-broad',note:'keep'},reviewer:{effort:'custom-reviewer',note:'keep'}}));
+  const r=run(process.execPath,[join(root,'scripts/save-lanes.mjs'),join(temp,'choices.json'),target]);
+  assert(r.status===0,r.stderr);
+  const saved=JSON.parse(readFileSync(target,'utf8'));
+  assert(saved.broad.effort==='custom-broad' && saved.reviewer.effort==='custom-reviewer' && saved.broad.note==='keep' && saved.reviewer.note==='keep','unused metadata lost');
+  const resolved=run(process.execPath,[join(root,'scripts/resolve-lanes.mjs'),target]);
+  assert(resolved.status===0,resolved.stderr);
+  const lanes=JSON.parse(resolved.stdout);
+  assert(!('effort' in lanes.broad) && !('effort' in lanes.reviewer),'unused metadata became an active setting');
+});
 check('custom Codex models require explicit effort without changing config', () => {
   const target=join(temp,'custom-effort.json');
   for (const lane of ['routine','complex']) {
