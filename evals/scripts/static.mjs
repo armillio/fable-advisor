@@ -257,6 +257,27 @@ if(process.argv.includes('auth')) {
   assert(r.status===2 && r.stderr.includes('UNTESTED:') && r.stderr.includes('timed out after 10 seconds'),r.stderr);
   assert(!existsSync(cases) && !readdirSync(dir).some(name=>name.startsWith('fable-behavior-')),'timeout reached cases or created transcripts');
 });
+check('behavior distinguishes process timeout from a model timeout decision', () => {
+  const dir=join(temp,'case-timeout'); mkdirSync(dir);
+  const hook=join(dir,'timeout.cjs');
+  // Inject spawnSync's timeout result; do not wait three minutes or invoke a provider.
+  writeFileSync(hook,`const cp=require('node:child_process');
+cp.spawnSync=(command,args,options)=>{
+  if(args.includes('auth'))return {status:0,stdout:'{"loggedIn":true}'};
+  if(options.timeout!==180000 || options.killSignal!=='SIGKILL')throw Error('case deadline not enforced');
+  return {status:null,signal:'SIGKILL',error:{code:'ETIMEDOUT'},stdout:'{"status":"timeout"}',stderr:''};
+}; require('node:module').syncBuiltinESMExports();`);
+  const r=run(process.execPath,['--require',hook,join(root,'evals/scripts/behavior.mjs')],{
+    env:{...process.env,TMPDIR:dir,FABLE_EVAL_REPEATS:'1'},timeout:10000
+  });
+  assert(r.status===1 && r.stdout.includes('(timeout)') && r.stdout.includes('FAIL 0/18'),r.stdout+r.stderr);
+  const records=join(dir,readdirSync(dir).find(name=>name.startsWith('fable-behavior-')));
+  for(const file of readdirSync(records)) {
+    const record=JSON.parse(readFileSync(join(records,file),'utf8'));
+    assert(record.execution_status==='timeout' && record.error_code==='ETIMEDOUT' && record.exit===null,'lost infrastructure failure');
+    assert(record.observed.status==='timeout','model decision overwritten with infrastructure status');
+  }
+});
 check('behavior records and console recursively redact structured model output', () => {
   const dir=join(temp,'behavior-redaction'); mkdirSync(dir);
   const home=join(dir,'home'); mkdirSync(home);

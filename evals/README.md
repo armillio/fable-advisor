@@ -10,6 +10,8 @@ Set `FABLE_EVAL_REPEATS=2` or `3` for bounded repeated runs. Only integers 1–3
 
 Decision content and stderr are recursively redacted for known credential patterns and local home/plugin/temp paths before being saved or printed. Transcripts live in an OS temporary directory; their locations are printed for inspection. Redaction is best-effort, not a guarantee against arbitrary sensitive model output. Do not commit generated transcripts.
 
+Each case records `execution_status` separately from the model's decision: a process timeout is `timeout`, with its error code and signal retained, and always fails evaluation even if the partial decision matches the scenario. The console labels these timeouts explicitly.
+
 Static tests never rename/delete a real provider binary. Temporary shims exercise unavailable/auth/blocked/timeout/empty-diff/failing-verification/success outcomes, exit-0 soft denials, model mismatches, malformed events, API-key-mode refusal, and legacy-slug refusal. Regression tests cover configured models, literal verifier arguments, malformed config, concurrent setup writes, output redaction, and invalid repeat counts. The Codex missing-binary check uses an empty executable search path.
 
 **Limitations:** Claude decision evals test the loaded doctrine and machine-readable decisions, not an end-to-end implementation/review event trace. The Gemini smoke test against the real model is separate and costs tokens; run it only in a disposable repository with a harmless file task, then inspect the diff and verification output. Provider/model access may differ across machines. If a case is flaky, keep failed run records and tighten the scenario/schema rather than relabeling it a pass.
