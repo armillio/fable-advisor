@@ -28,8 +28,10 @@ if (command === 'preflight') {
   const instruction = 'Implement the delegated specification below in the current repository. Do not expand scope or change architecture. Do not bypass any denied tool. Report changes, verification evidence, and judgment calls. The caller independently runs the verification command after your implementation.\n\n';
   process.stdout.write(JSON.stringify({ event: 'user', message: { content: instruction + spec } }) + '\n');
 } else if (command === 'verification') {
-  const [outputFile, exitCode] = args;
-  const blocked = exitCode === '126' || denied.test(readFileSync(outputFile, 'utf8'));
+  const [, exitCode] = args;
+  // Verifier output is test data, not a trusted permission-status channel.
+  // Exit 126 is reserved by the caller-approved verifier for execution denial.
+  const blocked = exitCode === '126';
   report(blocked ? 'blocked' : 'partial', blocked
     ? 'Independent verification denied; no bypass attempted'
     : 'Independent verification failed');

@@ -164,8 +164,11 @@ check('verification arguments never undergo shell evaluation', () => {
 });
 for (const [label,verifier,mode,expected,exitCode] of [
   ['not executable','exit 0',0o644,'blocked',126],
-  ['permission denied','echo "permission denied" >&2; exit 1',0o755,'blocked',1],
-  ['policy denied','echo "blocked by policy" >&2; exit 1',0o755,'blocked',1],
+  ['permission denial contract','echo "permission denied" >&2; exit 126',0o755,'blocked',126],
+  ['policy denial contract','echo "blocked by policy" >&2; exit 126',0o755,'blocked',126],
+  ['quoted permission assertion','echo "Assertion failed: expected permission denied" >&2; exit 1',0o755,'partial',1],
+  ['quoted policy assertion','echo "Assertion failed: expected blocked by policy" >&2; exit 1',0o755,'partial',1],
+  ['ambiguous permission log','echo "permission denied" >&2; exit 1',0o755,'partial',1],
   ['ordinary failure','echo "assertion failed" >&2; exit 1',0o755,'partial',1]
 ]) check(`verification ${label} → ${expected} without retry`, () => {
   const r=fixture('verify-denial',['./verify'],{verifier,verifierMode:mode});
