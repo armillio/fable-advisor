@@ -185,6 +185,22 @@ check('behavior repeat count rejects invalid inputs before invoking Claude', () 
     assert(!existsSync(marker),'invalid repeats reached Claude');
   }
 });
+check('behavior authentication timeout stops before cases or transcripts', () => {
+  const dir=join(temp,'auth-timeout'); mkdirSync(dir);
+  const marker=join(dir,'auth-started'), cases=join(dir,'case-started'), cli=join(dir,'claude');
+  writeFileSync(cli,`#!${process.execPath}\nconst fs=require('fs');
+if(process.argv.includes('auth')) {
+  fs.writeFileSync(${JSON.stringify(marker)},'called');
+  process.on('SIGTERM',()=>{}); setInterval(()=>{},1000);
+} else fs.writeFileSync(${JSON.stringify(cases)},'called');\n`);
+  chmodSync(cli,0o755);
+  const r=run(process.execPath,[join(root,'evals/scripts/behavior.mjs')],{
+    env:{...process.env,PATH:dir,HOME:dir,TMPDIR:dir,FABLE_EVAL_REPEATS:'1'},timeout:20000,killSignal:'SIGKILL'
+  });
+  assert(existsSync(marker),'authentication probe never started');
+  assert(r.status===2 && r.stderr.includes('UNTESTED:') && r.stderr.includes('timed out after 10 seconds'),r.stderr);
+  assert(!existsSync(cases) && !readdirSync(dir).some(name=>name.startsWith('fable-behavior-')),'timeout reached cases or created transcripts');
+});
 check('behavior records and console recursively redact structured model output', () => {
   const dir=join(temp,'behavior-redaction'); mkdirSync(dir);
   const home=join(dir,'home'); mkdirSync(home);

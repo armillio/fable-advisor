@@ -6,7 +6,7 @@ The harness checks **this plugin's orchestration behavior**, not general coding 
 - `npm run eval:behavior` — **opt-in and token-consuming** Claude Code decision checks. Requires `claude auth status` to show a login. Loads this checkout using the installed CLI's `--plugin-dir`, uses `--print --output-format json --json-schema` and plan permission mode, and asks for routing/escalation/verification/review decisions **without implementation**. It grades enum fields and event ordering, never exact prose. A missing login exits 2 as UNTESTED, not PASS.
 - `npm run eval:all` — both tiers; do not put this on every install/update. Normal CI should run `eval:static`; behavioral runs belong in a dedicated, explicitly authorized workflow.
 
-Set `FABLE_EVAL_REPEATS=2` or `3` for bounded repeated runs. Only integers 1–3 are accepted; invalid values fail before authentication/model calls. Every run is reported separately; there is no hidden majority-vote pass. Each case is capped at 3 minutes and $0.25.
+Set `FABLE_EVAL_REPEATS=2` or `3` for bounded repeated runs. Only integers 1–3 are accepted; invalid values fail before authentication/model calls. The authentication probe has a 10-second deadline; a timeout exits 2 as UNTESTED before cases or transcripts are created. Every run is reported separately; there is no hidden majority-vote pass. Each case is capped at 3 minutes and $0.25.
 
 Decision content and stderr are recursively redacted for known credential patterns and local home/plugin/temp paths before being saved or printed. Transcripts live in an OS temporary directory; their locations are printed for inspection. Redaction is best-effort, not a guarantee against arbitrary sensitive model output. Do not commit generated transcripts.
 

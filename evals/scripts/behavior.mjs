@@ -14,7 +14,11 @@ if (!/^[1-3]$/.test(repeatInput)) {
   process.exit(2);
 }
 const repeats=Number(repeatInput);
-const auth=spawnSync('claude',['auth','status'],{encoding:'utf8'});
+const auth=spawnSync('claude',['auth','status'],{encoding:'utf8',timeout:10000,killSignal:'SIGKILL'});
+if (auth.error?.code==='ETIMEDOUT') {
+  console.error('UNTESTED: Claude Code authentication probe timed out after 10 seconds; no cases were run.');
+  process.exit(2);
+}
 let state; try { state=JSON.parse(auth.stdout); } catch { state={}; }
 if (auth.error || auth.status!==0 || !state.loggedIn) {
   console.error('UNTESTED: Claude Code is not authenticated; behavioral integration evals were not run.');
