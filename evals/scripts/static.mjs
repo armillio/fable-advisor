@@ -422,6 +422,53 @@ require('node:module').syncBuiltinESMExports();`);
     }
   }
 });
+check('cleanup attempts every owned path and preserves termination status on filesystem errors', () => {
+  for(const [signal,exitCode] of [['SIGINT',130],['SIGTERM',143],['SIGHUP',129],[null,1]]) {
+    for(const failure of ['temp','owner','lock']) {
+      const dir=join(temp,`cleanup-${signal}-${failure}`); mkdirSync(dir);
+      const target=join(dir,'lanes.json'), hook=join(dir,'fault.cjs'), attempts=join(dir,'attempts');
+      const old='{"version":1,"note":"preserved"}'; writeFileSync(target,old);
+      writeFileSync(hook,`const fs=require('node:fs'); const write=fs.writeFileSync;
+for(const method of ['unlinkSync','rmdirSync']) {const original=fs[method];fs[method]=function(path,...args){
+const kind=String(path).endsWith('.tmp')?'temp':String(path).endsWith('/owner.json')?'owner':'lock';
+fs.appendFileSync(${JSON.stringify(attempts)},kind+'\\n');
+if(kind===${JSON.stringify(failure)})throw Object.assign(Error('injected cleanup error'),{code:'EACCES'});
+return original.call(this,path,...args);};}
+fs.writeFileSync=function(path,...args){const result=write.call(this,path,...args);if(${JSON.stringify(signal)} && String(path).endsWith('.tmp'))process.kill(process.pid,${JSON.stringify(signal)});return result;};
+require('node:module').syncBuiltinESMExports();`);
+      const r=run(process.execPath,['--require',hook,join(root,'scripts/save-lanes.mjs'),join(temp,'choices.json'),target],{timeout:10000});
+      assert(r.status===exitCode,`${signal}/${failure}: ${r.status} ${r.stderr}`);
+      assert(readFileSync(attempts,'utf8')==='temp\nowner\nlock\n','cleanup skipped a resource or retried');
+      assert(r.stderr.includes('Setup cleanup failed') && r.stderr.includes('inspect manually') && !r.stderr.includes('Error: injected'),r.stderr);
+      if(signal) assert(readFileSync(target,'utf8')===old,'terminated save replaced config');
+    }
+  }
+});
+check('setup refuses live and dangling symlink targets without replacing links or destinations', () => {
+  for(const live of [true,false]) {
+    const dir=join(temp,`symlink-config-${live}`); mkdirSync(dir);
+    const target=join(dir,'lanes.json'), destination=join(dir,'actual.json');
+    const raw='{"version":1,"note":"preserved"}';
+    if(live) writeFileSync(destination,raw);
+    symlinkSync('actual.json',target);
+    const r=run(process.execPath,[join(root,'scripts/save-lanes.mjs'),join(temp,'choices.json'),target]);
+    assert(r.status!==0 && r.stderr.includes('Symlinked lane configuration'),r.stdout+r.stderr);
+    assert(lstatSync(target).isSymbolicLink() && readlinkSync(target)==='actual.json','link replaced');
+    assert(live ? readFileSync(destination,'utf8')===raw : !existsSync(destination),'destination changed');
+    assert(!existsSync(target+'.lock') && !readdirSync(dir).some(name=>name.endsWith('.tmp') || name.includes('.backup-')),'rejected link leaked artifacts');
+  }
+});
+check('setup rechecks a target swapped to a symlink before publishing', () => {
+  const dir=join(temp,'symlink-config-swap'); mkdirSync(dir);
+  const target=join(dir,'lanes.json'), destination=join(dir,'actual.json'), hook=join(dir,'swap.cjs');
+  writeFileSync(target,'{"version":1}'); writeFileSync(destination,'{"note":"untouched"}');
+  writeFileSync(hook,`const fs=require('node:fs');const copy=fs.copyFileSync;
+fs.copyFileSync=function(...args){const result=copy.apply(this,args);fs.unlinkSync(${JSON.stringify(target)});fs.symlinkSync('actual.json',${JSON.stringify(target)});return result;};require('node:module').syncBuiltinESMExports();`);
+  const r=run(process.execPath,['--require',hook,join(root,'scripts/save-lanes.mjs'),join(temp,'choices.json'),target]);
+  assert(r.status!==0 && r.stderr.includes('Symlinked lane configuration'),r.stdout+r.stderr);
+  assert(lstatSync(target).isSymbolicLink() && readFileSync(destination,'utf8')==='{"note":"untouched"}','swapped link or destination overwritten');
+  assert(!existsSync(target+'.lock') && !readdirSync(dir).some(name=>name.endsWith('.tmp')),'swap failure leaked lock/temp');
+});
 check('uncatchable setup termination preserves a diagnosable lock for manual recovery', () => {
   const dir=join(temp,'killed-setup'); mkdirSync(dir);
   const target=join(dir,'lanes.json'), hook=join(dir,'kill.cjs');

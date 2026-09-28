@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Atomically merge confirmed lane choices; never silently reset existing keys.
-import { readFileSync, existsSync, mkdirSync, rmdirSync, writeFileSync, renameSync, copyFileSync, unlinkSync, chmodSync, constants } from 'node:fs';
+import { readFileSync, existsSync, lstatSync, mkdirSync, rmdirSync, writeFileSync, renameSync, copyFileSync, unlinkSync, chmodSync, constants } from 'node:fs';
 import { homedir, hostname } from 'node:os';
 import { setImmediate } from 'node:timers/promises';
 import { join, dirname } from 'node:path';
@@ -22,10 +22,23 @@ const temp=join(dir,`.lanes.${process.pid}.${Date.now()}.tmp`);
 let ownsLock=false;
 function cleanup() {
   if (!ownsLock) return;
-  try { unlinkSync(temp); } catch (error) { if (error.code!=='ENOENT') throw error; }
-  try { unlinkSync(owner); } catch (error) { if (error.code!=='ENOENT') throw error; }
-  rmdirSync(lock);
   ownsLock=false;
+  for (const [remove,path] of [[unlinkSync,temp],[unlinkSync,owner],[rmdirSync,lock]]) {
+    try { remove(path); }
+    catch (error) {
+      if (error.code==='ENOENT') continue;
+      console.error(`Setup cleanup failed for ${path}; inspect manually after confirming no setup is running.`);
+      // Preserve signal/error status, but do not report a clean exit on failure.
+      process.exitCode=process.exitCode || 1;
+    }
+  }
+}
+function checkTarget() {
+  let stat;
+  try { stat=lstatSync(target); }
+  catch (error) { if (error.code==='ENOENT') return; throw error; }
+  if (stat.isSymbolicLink()) throw new Error('Symlinked lane configuration is not supported; explicitly select its real file as the setup target. No link was replaced.');
+  if (!stat.isFile()) throw new Error('Lane configuration target must be a regular file');
 }
 // Synchronous filesystem operations finish before JS signal handlers run.
 // Exit cleanup only removes this process's lock, never a competing writer's.
@@ -43,6 +56,7 @@ try {
   writeFileSync(owner,JSON.stringify({pid:process.pid,hostname:hostname(),started_at:new Date().toISOString(),temp})+'\n',{mode:0o600,flag:'wx'});
   // Give pending termination signals a chance to stop before reading/writing config.
   await setImmediate();
+  checkTarget();
   const current=existsSync(target)?JSON.parse(readFileSync(target,'utf8')):{};
   validateLanes(current,catalog);
   const next={...current,version:2};
@@ -62,6 +76,7 @@ try {
   JSON.parse(readFileSync(temp,'utf8'));
   if (backup) { copyFileSync(target,backup,constants.COPYFILE_EXCL); chmodSync(backup,0o600); }
   await setImmediate();
+  checkTarget();
   renameSync(temp,target);
   console.log(JSON.stringify({target,backup,version:2}));
 } finally {
