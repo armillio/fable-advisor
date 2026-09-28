@@ -23,7 +23,11 @@ for (const [name, lane] of Object.entries(catalog)) {
   }
   if (name === 'routine' || name === 'complex') {
     const model = lane.options.find(option => option.id === result[name].model);
-    result[name].effort = choice.effort ?? model?.default_effort ?? lane.options[0].default_effort;
+    const effort = choice.effort ?? model?.default_effort;
+    if (effort === undefined) {
+      throw new Error(`Custom ${name} model requires an explicit effort; run setup to confirm a supported pairing. No config was changed.`);
+    }
+    result[name].effort = effort;
   }
 }
 process.stdout.write(JSON.stringify(result, null, 2) + '\n');

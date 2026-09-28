@@ -189,6 +189,22 @@ check('invalid config cannot invoke default broad model', () => {
   const r=fixture('invalid-config',undefined,{config:{broad:null}});
   assert(r.status!==0 && r.stdout.includes('STATUS: unavailable') && !existsSync(join(r.dir,'output.txt')),r.stdout);
 });
+check('custom Codex models require explicit effort without changing config', () => {
+  const target=join(temp,'custom-effort.json');
+  for (const lane of ['routine','complex']) {
+    for (const effort of [undefined,'low']) {
+      const raw=JSON.stringify({version:2,[lane]:{model:'custom-model',effort}}); writeFileSync(target,raw);
+      const r=run(process.execPath,[join(root,'scripts/resolve-lanes.mjs'),target]);
+      if (effort===undefined) assert(r.status!==0 && r.stderr.includes('requires an explicit effort'),r.stdout+r.stderr);
+      else assert(r.status===0 && JSON.parse(r.stdout)[lane].effort===effort,r.stdout+r.stderr);
+      assert(readFileSync(target,'utf8')===raw,'config rewritten');
+    }
+  }
+  writeFileSync(target,JSON.stringify({routine:{model:'gpt-6-sol'},complex:{model:'gpt-6-luna'}}));
+  const r=run(process.execPath,[join(root,'scripts/resolve-lanes.mjs'),target]);
+  const value=JSON.parse(r.stdout);
+  assert(r.status===0 && value.routine.effort==='medium' && value.complex.effort==='max','known model defaults lost');
+});
 check('a live competing setup cannot overwrite confirmed choices', () => {
   const dir=join(temp,'concurrent'); mkdirSync(dir);
   const target=join(dir,'lanes.json'), ready=join(dir,'ready'), release=join(dir,'release');
