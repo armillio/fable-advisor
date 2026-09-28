@@ -40,6 +40,10 @@ function fixture(mode, verify=['test','-f','output.txt'], options={}) {
   run('git',['init','-q',dir]); writeFileSync(join(dir,'README.md'),'fixture\n');
   run('git',['-C',dir,'add','README.md']); run('git',['-C',dir,'-c','user.name=Fixture','-c','user.email=fixture@example.invalid','commit','-qm','fixture']);
   const spec=join(dir,'spec.txt'); writeFileSync(spec,'OBJECTIVE: write output.txt\nVERIFICATION: '+verify.join(' ')+'\n');
+  if (options.verifier) {
+    writeFileSync(join(dir,'verify'),`#!/bin/sh\necho invoked >> verifier-calls\n${options.verifier}\n`);
+    chmodSync(join(dir,'verify'),options.verifierMode ?? 0o755);
+  }
   const shim=join(dir,'shim'); mkdirSync(shim);
   const home=join(temp,'home-'+Math.random().toString(16).slice(2)); mkdirSync(home);
   const env={...process.env,HOME:home,PATH:shim+':'+basePath,SHIM_MODE:mode,TMPDIR:temp,FABLE_WORKDIR:dir};
@@ -126,6 +130,18 @@ check('verification arguments never undergo shell evaluation', () => {
   const r=fixture('literal-argv',['test',literal,'=',literal]);
   assert(r.status===0,r.stdout+r.stderr);
   assert(!existsSync(join(r.dir,'injected.txt')) && !existsSync(join(r.dir,'another.txt')),'shell syntax executed');
+});
+for (const [label,verifier,mode,expected,exitCode] of [
+  ['not executable','exit 0',0o644,'blocked',126],
+  ['permission denied','echo "permission denied" >&2; exit 1',0o755,'blocked',1],
+  ['policy denied','echo "blocked by policy" >&2; exit 1',0o755,'blocked',1],
+  ['ordinary failure','echo "assertion failed" >&2; exit 1',0o755,'partial',1]
+]) check(`verification ${label} → ${expected} without retry`, () => {
+  const r=fixture('verify-denial',['./verify'],{verifier,verifierMode:mode});
+  assert(r.status!==0 && r.stdout.includes(`STATUS: ${expected}`) && r.stdout.includes(`verification attempted; exit ${exitCode}`),r.stdout+r.stderr);
+  const calls=join(r.dir,'verifier-calls');
+  assert(mode===0o644 ? !existsSync(calls) : readFileSync(calls,'utf8')==='invoked\n','verifier retried or bypassed');
+  assert(!existsSync(join(r.dir,'fallback.txt')),'fallback invoked');
 });
 check('old shell-string verifier is rejected without execution', () => {
   const r=fixture('shell-string',['touch injected.txt'],{legacyVerify:true});

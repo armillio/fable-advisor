@@ -27,6 +27,12 @@ if (command === 'preflight') {
   const spec = readFileSync(args[0], 'utf8');
   const instruction = 'Implement the delegated specification below in the current repository. Do not expand scope or change architecture. Do not bypass any denied tool. Report changes, verification evidence, and judgment calls. The caller independently runs the verification command after your implementation.\n\n';
   process.stdout.write(JSON.stringify({ event: 'user', message: { content: instruction + spec } }) + '\n');
+} else if (command === 'verification') {
+  const [outputFile, exitCode] = args;
+  const blocked = exitCode === '126' || denied.test(readFileSync(outputFile, 'utf8'));
+  report(blocked ? 'blocked' : 'partial', blocked
+    ? 'Independent verification denied; no bypass attempted'
+    : 'Independent verification failed');
 } else if (command === 'decode') {
   const [outputFile, diagnosticFile, expectedModel] = args;
   const raw = readFileSync(outputFile, 'utf8');
@@ -52,5 +58,5 @@ if (command === 'preflight') {
   else if (result.status !== 'SUCCESS') report('partial', `Antigravity terminal status: ${result.status}`, response);
   else report('ready', 'Antigravity success; independent diff and verification still required', response);
 } else {
-  throw new Error('Usage: antigravity-io.mjs preflight | encode SPEC_FILE | decode OUTPUT DIAGNOSTICS MODEL');
+  throw new Error('Usage: antigravity-io.mjs preflight | encode SPEC_FILE | verification OUTPUT EXIT_CODE | decode OUTPUT DIAGNOSTICS MODEL');
 }

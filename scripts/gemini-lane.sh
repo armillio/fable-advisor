@@ -76,7 +76,11 @@ elif [ "$STATUS" = ready ]; then
   elif "${VERIFY[@]}" > "$RUN/verification" 2>&1; then
     STATUS=complete; REASON='Independent verification passed'; VERIFICATION='independently executed; exit 0'
   else
-    STATUS=partial; REASON='Independent verification failed'; VERIFICATION='independently executed; nonzero exit'
+    VERIFY_RC=$?
+    VERIFICATION="independent verification attempted; exit $VERIFY_RC"
+    node "$HERE/antigravity-io.mjs" verification "$RUN/verification" "$VERIFY_RC" > "$RUN/verification-summary" || fail partial 'Cannot classify verification failure'
+    STATUS=$(head -n 1 "$RUN/verification-summary")
+    REASON=$(sed -n '2p' "$RUN/verification-summary")
   fi
 fi
 printf 'GEMINI REPORT\nLANE: gemini-implementer · Gemini 3.8 Flash (%s) · Antigravity CLI\nSTATUS: %s\nOBJECTIVE: %s\nCHANGES:\n' "$MODEL" "$STATUS" "$(grep -m1 '^OBJECTIVE:' "$SPEC_FILE" | sed 's/^OBJECTIVE:[[:space:]]*//' || true)"
