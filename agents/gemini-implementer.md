@@ -36,9 +36,9 @@ trap 'rm -f "$SPEC_FILE"' EXIT
 cat > "$SPEC_FILE" <<'SPEC_EOF'
 [the complete delegated spec, including OBJECTIVE: and the exact verification command]
 SPEC_EOF
-FABLE_WORKDIR="$(pwd)" FABLE_GEMINI_MODEL="gemini-3.8-flash-medium" \
+FABLE_WORKDIR="$(pwd)" \
   bash "${CLAUDE_PLUGIN_ROOT}/scripts/gemini-lane.sh" "$SPEC_FILE" \
-  '[the exact verification command from the spec]'
+  -- npm test
 ```
 
 The compatibility filename `gemini-lane.sh` now invokes **only Antigravity**. The helper encodes the entire spec into one NDJSON user event, sends it on stdin, closes stdin, and validates the returned events. It uses these locally verified CLI 1.2.12 flags:
@@ -54,6 +54,10 @@ Do not pass `--prompt` together with streamed input; that mode reads the prompt 
 `accept-edits` is **not** permission to bypass workspace policy. Antigravity can soft-deny a file or command tool, then exit 0; the runner checks diagnostics and tool-error events and reports `blocked`. It never adds global allow rules. If a necessary file write is denied, stop and surface the denial for the user to approve a narrowly scoped permission interactively. Never rephrase or use a different tool to get around it. Do not follow a diagnostic suggestion to skip all permissions.
 
 ## Verification and report
+
+Replace the example `-- npm test` with the architect-approved verifier executable and separate arguments. The runner never parses a verification string from the spec or model output and does not evaluate shell syntax. Do not wrap untrusted text in `bash -c`, `eval`, or another interpreter. Verification runs with the caller's permissions (not Antigravity's sandbox), so inspect and approve repository test scripts before invoking them. If a verifier is denied, report `blocked`; never substitute a different execution path.
+
+The runner resolves `broad.model` from the user's configuration by default. Only set `FABLE_GEMINI_MODEL` for an explicit architect-approved per-task override, using that exact model ID, not the example default. A saved legacy slug therefore reaches preflight and is rejected instead of silently remapped.
 
 The runner verifies the model in the init event, requires exactly one successful terminal result, compares before/after working-tree changes, and independently runs the supplied verification command. It uses the CLI's 20-minute timeout plus an external timeout when available. Unique temporary files are cleaned on exit. An empty diff is `refused`; a failed test or invalid event stream is `partial`; a timeout is `timeout`; auth/model errors are `unavailable`; a denied operation is `blocked`. No such result can become `complete` because the model claims success.
 

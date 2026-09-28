@@ -34,16 +34,22 @@ check('deprecated IDs absent from active definitions', () => { for (const file o
 const temp = mkdtempSync(join(tmpdir(), 'fable-eval-'));
 const basePath = '/usr/bin:/bin';
 function run(command, args, opts={}) { return spawnSync(command, args, { encoding:'utf8', ...opts }); }
-function fixture(mode, verify='test -f output.txt') {
+function fixture(mode, verify=['test','-f','output.txt'], options={}) {
   const dir=join(temp, mode+'-'+Math.random().toString(16).slice(2)); mkdirSync(dir);
   run('git',['init','-q',dir]); writeFileSync(join(dir,'README.md'),'fixture\n');
   run('git',['-C',dir,'add','README.md']); run('git',['-C',dir,'-c','user.name=Fixture','-c','user.email=fixture@example.invalid','commit','-qm','fixture']);
-  const spec=join(dir,'spec.txt'); writeFileSync(spec,'OBJECTIVE: write output.txt\nVERIFICATION: '+verify+'\n');
+  const spec=join(dir,'spec.txt'); writeFileSync(spec,'OBJECTIVE: write output.txt\nVERIFICATION: '+verify.join(' ')+'\n');
   const shim=join(dir,'shim'); mkdirSync(shim);
   const home=join(temp,'home-'+Math.random().toString(16).slice(2)); mkdirSync(home);
   const env={...process.env,HOME:home,PATH:shim+':'+basePath,SHIM_MODE:mode,TMPDIR:temp,FABLE_WORKDIR:dir};
   delete env.GEMINI_API_KEY;
   delete env.FABLE_GEMINI_MODEL;
+  if (options.config !== undefined) {
+    mkdirSync(join(home,'.claude/fable-advisor'),{recursive:true});
+    writeFileSync(join(home,'.claude/fable-advisor/lanes.json'),JSON.stringify(options.config));
+  }
+  if (options.model !== undefined) env.FABLE_GEMINI_MODEL=options.model;
+  env.EXPECTED_MODEL=options.expectedModel ?? 'gemini-3.8-flash-medium';
   symlinkSync(process.execPath,join(shim,'node'));
   // Even if the obsolete client is available it must never be called.
   writeFileSync(join(shim,'gemini'),'#!/bin/sh\necho forbidden-fallback > fallback.txt\nexit 99\n'); chmodSync(join(shim,'gemini'),0o755);
@@ -67,6 +73,7 @@ const diagnostics={auth:'authentication required',authmethod:'API key required',
 if(diagnostics[mode]){console.error(diagnostics[mode]);process.exit(1);}
 if(mode==='malformed'){console.log('not JSON');process.exit(0);}
 const model=args[args.indexOf('--model')+1];
+if(model!==process.env.EXPECTED_MODEL)throw Error('Configured model was not passed intact');
 console.log(JSON.stringify({event:'init',init:{model:mode==='wrong-model'?'gemini-3.7-flash-medium':model,permission_mode:'request-review'}}));
 if(mode==='soft-denial') {console.error('write_file was auto-denied');console.log(JSON.stringify({event:'step_update',step_update:{tool_info:{error:{type:'TOOL_ERROR',message:'user denied permission for write_file(note.txt)'}}}}));}
 if(!['nochange','soft-denial','event-timeout'].includes(mode))fs.writeFileSync('output.txt','implemented');
@@ -75,14 +82,14 @@ console.log(JSON.stringify({event:'result',result:{status:mode==='event-timeout'
     writeFileSync(join(shim,'agy'),script); chmodSync(join(shim,'agy'),0o755);
   }
   if (mode === 'timeout') { writeFileSync(join(shim,'gtimeout'),'#!/bin/sh\nexit 124\n'); chmodSync(join(shim,'gtimeout'),0o755); }
-  const result=run('bash',[join(root,'scripts/gemini-lane.sh'),spec,verify],{cwd:dir,env});
+  const result=run('bash',[join(root,'scripts/gemini-lane.sh'),spec,...(options.legacyVerify ? [verify.join(' ')] : ['--',...verify])],{cwd:dir,env});
   return { ...result, dir };
 }
 for (const [mode,expected,verify] of [
   ['missing','unavailable'],['auth','unavailable'],['authmethod','unavailable'],['blocked','blocked'],['untrusted','blocked'],['nochange','refused'],
   ['unsupported-client','unavailable'],['unsupported-code','unavailable'],['signin','unavailable'],
   ['legacy','unavailable'],['api-env','unavailable'],['api-settings','unavailable'],['unsafe-settings','blocked'],['soft-denial','blocked'],['wrong-model','unavailable'],['event-timeout','timeout'],['malformed','partial'],['error-event','partial'],
-  ['timeout','timeout'],['verifyfail','partial','false'],['success','complete']
+  ['timeout','timeout'],['verifyfail','partial',['false']],['success','complete']
 ]) {
   check(`Gemini ${mode} → ${expected}`, () => { const r=fixture(mode,verify); assert(r.stdout.includes(`STATUS: ${expected}`), `observed ${r.stdout}\n${r.stderr}`); assert(!existsSync(join(r.dir,'fallback.txt')), 'old client fallback invoked'); if (expected !== 'complete') assert(r.status !== 0, 'non-complete exit 0'); if (mode==='missing') assert(!existsSync(join(r.dir,'output.txt')), 'fallback wrote file'); if (mode==='success') assert(r.stdout.includes('CHANGES:\noutput.txt') && r.stdout.includes('VERIFIED: test -f output.txt'), 'missing diff or evidence'); });
 }
@@ -92,6 +99,75 @@ check('version-1 setup migration is backed up and atomic', () => { const target=
 check('invalid migration leaves existing config untouched', () => { const target=join(temp,'invalid-lanes.json'); const old='{"version":3,"custom":"keep"}'; writeFileSync(target,old); const choices=join(temp,'choices.json'); const r=run('node',[join(root,'scripts/save-lanes.mjs'),choices,target]); assert(r.status!==0,'accepted future version'); assert(readFileSync(target,'utf8')===old,'config changed'); });
 check('explicit legacy broad pin is preserved with a warning', () => { const target=join(temp,'legacy.json'); const old=JSON.stringify({version:2,broad:{provider:'google',model:'gemini-3.8-flash'}}); writeFileSync(target,old); const r=run('node',[join(root,'scripts/resolve-lanes.mjs'),target]); assert(r.status===0 && JSON.parse(r.stdout).broad.model==='gemini-3.8-flash' && r.stderr.includes('legacy'), 'legacy pin silently changed'); assert(readFileSync(target,'utf8')===old,'user config was rewritten'); });
 check('setup refuses legacy broad slug without overwriting', () => { const target=join(temp,'legacy-save.json'); const old=JSON.stringify({version:2,custom:'keep'}); writeFileSync(target,old); const choices=JSON.parse(readFileSync(join(temp,'choices.json'),'utf8')); choices.broad.model='gemini-3.8-flash'; const input=join(temp,'legacy-choice.json'); writeFileSync(input,JSON.stringify(choices)); const r=run('node',[join(root,'scripts/save-lanes.mjs'),input,target]); assert(r.status!==0 && readFileSync(target,'utf8')===old,'legacy migration lost user config'); });
+
+check('agent delegates configured model instead of hardcoding the default', () => {
+  assert(!/FABLE_GEMINI_MODEL="gemini-3\.8-flash-medium"/.test(read('agents/gemini-implementer.md')), 'hardcoded agent override');
+  const custom='gemini-3.8-flash-high';
+  const r=fixture('configured',undefined,{config:{version:2,broad:{provider:'google',model:custom}},expectedModel:custom});
+  assert(r.status===0 && r.stdout.includes(`(${custom})`),r.stdout+r.stderr);
+});
+check('saved legacy slug fails before model execution', () => {
+  const r=fixture('saved-legacy',undefined,{config:{version:2,broad:{model:'gemini-3.8-flash'}}});
+  assert(r.status!==0 && r.stdout.includes('STATUS: unavailable') && !existsSync(join(r.dir,'output.txt')),r.stdout);
+});
+check('explicit model override takes precedence over saved choice', () => {
+  const r=fixture('override',undefined,{config:{broad:{model:'gemini-3.8-flash-high'}},model:'gemini-3.8-flash-low',expectedModel:'gemini-3.8-flash-low'});
+  assert(r.status===0,r.stdout+r.stderr);
+});
+check('verification arguments never undergo shell evaluation', () => {
+  const literal='$(touch injected.txt); touch another.txt';
+  const r=fixture('literal-argv',['test',literal,'=',literal]);
+  assert(r.status===0,r.stdout+r.stderr);
+  assert(!existsSync(join(r.dir,'injected.txt')) && !existsSync(join(r.dir,'another.txt')),'shell syntax executed');
+});
+check('old shell-string verifier is rejected without execution', () => {
+  const r=fixture('shell-string',['touch injected.txt'],{legacyVerify:true});
+  assert(r.status!==0 && r.stdout.includes('STATUS: partial') && !existsSync(join(r.dir,'injected.txt')),'legacy shell command executed');
+});
+check('malformed root and lane values are rejected without rewriting', () => {
+  const invalid=[null,[],42,'invalid',...['broad','routine','complex','reviewer'].flatMap(lane=>
+    [null,[],42,'invalid',{model:null},{model:42},{model:''},{provider:null},{effort:[]}].map(value=>({version:2,[lane]:value})))];
+  const target=join(temp,'malformed.json');
+  for(const value of invalid) {
+    const raw=JSON.stringify(value); writeFileSync(target,raw);
+    for(const [file,args] of [['resolve-lanes.mjs',[target]],['save-lanes.mjs',[join(temp,'choices.json'),target]]]) {
+      const r=run(process.execPath,[join(root,'scripts',file),...args]);
+      assert(r.status!==0,`${file} accepted ${raw}`);
+      assert(readFileSync(target,'utf8')===raw,'invalid config rewritten');
+    }
+    assert(!existsSync(`${target}.lock`),'validation failure leaked lock');
+  }
+});
+check('invalid config cannot invoke default broad model', () => {
+  const r=fixture('invalid-config',undefined,{config:{broad:null}});
+  assert(r.status!==0 && r.stdout.includes('STATUS: unavailable') && !existsSync(join(r.dir,'output.txt')),r.stdout);
+});
+check('a live competing setup cannot overwrite confirmed choices', () => {
+  const dir=join(temp,'concurrent'); mkdirSync(dir);
+  const target=join(dir,'lanes.json'), ready=join(dir,'ready'), release=join(dir,'release');
+  const choices=JSON.parse(readFileSync(join(temp,'choices.json'),'utf8'));
+  const first=join(dir,'first.json'), second=join(dir,'second.json');
+  writeFileSync(first,JSON.stringify(choices));
+  writeFileSync(second,JSON.stringify({...choices,broad:{provider:'google',model:'gemini-3.8-flash-low'}}));
+  writeFileSync(target,JSON.stringify({version:1,custom_setting:'preserved'}));
+  const hook=join(dir,'hold-lock.cjs');
+  // Test-only preload: pause the first process immediately before its rename.
+  writeFileSync(hook,`const fs=require('node:fs'); const rename=fs.renameSync;
+fs.renameSync=function(...args) {fs.writeFileSync(${JSON.stringify(ready)},'ready'); const end=Date.now()+10000;
+while(!fs.existsSync(${JSON.stringify(release)})){if(Date.now()>end)throw Error('test release timeout');Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,10);}
+return rename(...args);}; require('node:module').syncBuiltinESMExports();`);
+  const driver=`const {spawn,spawnSync}=require('node:child_process'); const fs=require('node:fs');
+const writer=spawn(process.execPath,['--require',${JSON.stringify(hook)},${JSON.stringify(join(root,'scripts/save-lanes.mjs'))},${JSON.stringify(first)},${JSON.stringify(target)}],{stdio:['ignore','pipe','pipe']});
+const end=Date.now()+10000; while(!fs.existsSync(${JSON.stringify(ready)})){if(Date.now()>end){writer.kill();throw Error('first writer not ready');}Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,10);}
+const other=spawnSync(process.execPath,[${JSON.stringify(join(root,'scripts/save-lanes.mjs'))},${JSON.stringify(second)},${JSON.stringify(target)}],{encoding:'utf8'});
+fs.writeFileSync(${JSON.stringify(release)},'release');
+writer.on('exit',code=>{if(code!==0||other.status===0||!other.stderr.includes('configuration lock'))process.exitCode=1;});`;
+  const r=run(process.execPath,['-e',driver],{timeout:15000});
+  assert(r.status===0,r.stderr);
+  const saved=JSON.parse(readFileSync(target,'utf8'));
+  assert(saved.broad.model===choices.broad.model && saved.custom_setting==='preserved','competing write lost choices');
+  assert(!existsSync(`${target}.lock`),'successful save leaked lock');
+});
 rmSync(temp,{recursive:true,force:true});
 let passed=tests.filter(x=>x[1]).length;
 console.log('Fable Advisor behavioral evals\n');

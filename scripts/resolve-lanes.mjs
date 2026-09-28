@@ -4,14 +4,13 @@ import { readFileSync, existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { validateLanes } from './validate-lanes.mjs';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const catalog = JSON.parse(readFileSync(join(root, 'config/models.json'), 'utf8')).lanes;
 const path = process.argv[2] ?? join(homedir(), '.claude/fable-advisor/lanes.json');
 const stored = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : {};
-if (stored.version !== undefined && ![1, 2].includes(stored.version)) {
-  throw new Error(`Unsupported lanes.json version: ${stored.version}`);
-}
+validateLanes(stored, catalog);
 const result = { version: stored.version ?? 2 };
 for (const [name, lane] of Object.entries(catalog)) {
   const choice = stored[name] ?? {};

@@ -3,8 +3,7 @@
 # Filename retained for compatibility; never falls back to gemini CLI or API keys.
 set -u
 SPEC_SOURCE=${1:-}
-VERIFY=${2:-}
-MODEL=${FABLE_GEMINI_MODEL:-gemini-3.8-flash-medium}
+MODEL=${FABLE_GEMINI_MODEL-gemini-3.8-flash-medium}
 ROOT=${FABLE_WORKDIR:-$PWD}
 HERE=$(cd "$(dirname "$0")" && pwd)
 fail() {
@@ -14,8 +13,15 @@ fail() {
 command -v agy >/dev/null 2>&1 || fail unavailable 'agy not found on PATH; install Antigravity CLI and sign in interactively'
 VERSION=$(agy --version 2>&1) || fail unavailable "agy --version failed: $VERSION"
 command -v node >/dev/null 2>&1 || fail unavailable 'Node.js is required for Antigravity stream handling'
+if [ "${FABLE_GEMINI_MODEL+x}" != x ]; then
+  LANES=$(node "$HERE/resolve-lanes.mjs") || fail unavailable 'Invalid lane configuration; no model substituted'
+  MODEL=$(printf '%s' "$LANES" | node -e 'let s=""; process.stdin.on("data",d=>s+=d).on("end",()=>process.stdout.write(JSON.parse(s).broad.model))') || fail unavailable 'Cannot resolve broad model'
+fi
+[ -n "$MODEL" ] || fail unavailable 'An explicit model override must not be empty'
 [ "$MODEL" != gemini-3.8-flash ] || fail unavailable 'Legacy Gemini CLI model slug: run setup and explicitly choose an agy models slug such as gemini-3.8-flash-medium'
-[ -f "$SPEC_SOURCE" ] && [ -n "$VERIFY" ] && [ -d "$ROOT" ] || fail partial 'Usage: gemini-lane.sh SPEC_FILE VERIFICATION_COMMAND (FABLE_WORKDIR optional)'
+[ -f "$SPEC_SOURCE" ] && [ "${2:-}" = -- ] && [ "$#" -ge 3 ] && [ -d "$ROOT" ] || fail partial 'Usage: gemini-lane.sh SPEC_FILE -- APPROVED_COMMAND [ARG ...] (FABLE_WORKDIR optional)'
+shift 2
+VERIFY=("$@")
 CHECK=$(node "$HERE/antigravity-io.mjs" preflight) || fail "$(printf '%s\n' "$CHECK" | head -n 1)" "$(printf '%s\n' "$CHECK" | sed -n '2p')"
 # Resolve the spec before changing directories.
 SPEC_SOURCE=$(cd "$(dirname "$SPEC_SOURCE")" && pwd)/$(basename "$SPEC_SOURCE")
@@ -66,7 +72,8 @@ elif [ "$STATUS" = ready ]; then
     STATUS=partial; REASON="Antigravity exited $RC despite its success event"
   elif cmp -s "$RUN/before" "$RUN/after"; then
     STATUS=refused; REASON='No implementation diff was produced'
-  elif bash -c "$VERIFY" > "$RUN/verification" 2>&1; then
+  # Caller-approved argv only: never evaluate a shell string from the spec/model.
+  elif "${VERIFY[@]}" > "$RUN/verification" 2>&1; then
     STATUS=complete; REASON='Independent verification passed'; VERIFICATION='independently executed; exit 0'
   else
     STATUS=partial; REASON='Independent verification failed'; VERIFICATION='independently executed; nonzero exit'
@@ -74,7 +81,7 @@ elif [ "$STATUS" = ready ]; then
 fi
 printf 'GEMINI REPORT\nLANE: gemini-implementer · Gemini 3.8 Flash (%s) · Antigravity CLI\nSTATUS: %s\nOBJECTIVE: %s\nCHANGES:\n' "$MODEL" "$STATUS" "$(grep -m1 '^OBJECTIVE:' "$SPEC_FILE" | sed 's/^OBJECTIVE:[[:space:]]*//' || true)"
 (diff -u "$RUN/files-before" "$RUN/files-after" || true) | sed -n '/^[+-][^+-]/ { s/^[+-]//; p; }' | cut -f1 | sort -u
-printf 'VERIFIED: %s\n%s\n' "$VERIFY" "$VERIFICATION"
+printf 'VERIFIED: '; printf '%q ' "${VERIFY[@]}"; printf '\n%s\n' "$VERIFICATION"
 [ ! -f "$RUN/verification" ] || tail -n 30 "$RUN/verification" | redact
 printf 'GEMINI SAID:\n'; sed '1,2d' "$RUN/summary" | tail -n 30 | redact
 printf 'DIAGNOSTICS:\n'; tail -n 15 "$RUN/diagnostics" | redact
