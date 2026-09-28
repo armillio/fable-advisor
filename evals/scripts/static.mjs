@@ -98,6 +98,17 @@ for (const [mode,expected,verify] of [
 ]) {
   check(`Gemini ${mode} → ${expected}`, () => { const r=fixture(mode,verify); assert(r.stdout.includes(`STATUS: ${expected}`), `observed ${r.stdout}\n${r.stderr}`); assert(!existsSync(join(r.dir,'fallback.txt')), 'old client fallback invoked'); if (expected !== 'complete') assert(r.status !== 0, 'non-complete exit 0'); if (mode==='missing') assert(!existsSync(join(r.dir,'output.txt')), 'fallback wrote file'); if (mode==='success') assert(r.stdout.includes('CHANGES:\noutput.txt') && r.stdout.includes('VERIFIED: test -f output.txt'), 'missing diff or evidence'); });
 }
+check('decoder classifies invalid event shapes without throwing', () => {
+  const output=join(temp,'invalid-events.ndjson'), diagnostic=join(temp,'invalid-events.stderr');
+  for (const event of [null,42,true,'text',[],{}, {event:null}]) {
+    for (const [message,expected] of [['','partial'],['permission denied','blocked'],['authentication required','unavailable']]) {
+      writeFileSync(output,JSON.stringify(event)+'\n'); writeFileSync(diagnostic,message);
+      const r=run(process.execPath,[join(root,'scripts/antigravity-io.mjs'),'decode',output,diagnostic,'gemini-3.8-flash-medium']);
+      assert(r.status===0 && r.stdout.startsWith(expected+'\n') && r.stdout.includes('invalid Antigravity event stream'),r.stdout+r.stderr);
+      assert(!r.stderr.includes('TypeError'),'decoder threw instead of classifying');
+    }
+  }
+});
 check('Codex preflight unavailable in isolated PATH', () => {
   const emptyPath=join(temp,'no-executables'); mkdirSync(emptyPath);
   const env={...process.env,PATH:emptyPath}; delete env.BASH_ENV; delete env.ENV;

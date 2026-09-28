@@ -38,7 +38,12 @@ if (command === 'preflight') {
   const raw = readFileSync(outputFile, 'utf8');
   const diagnostics = readFileSync(diagnosticFile, 'utf8');
   let events;
-  try { events = raw.split('\n').filter(line => line.trim()).map(line => JSON.parse(line)); }
+  try {
+    events = raw.split('\n').filter(line => line.trim()).map(line => JSON.parse(line));
+    if (events.some(event => !event || typeof event !== 'object' || Array.isArray(event) || typeof event.event !== 'string')) {
+      throw new Error('Expected event objects');
+    }
+  }
   catch {
     const status = authError.test(diagnostics) ? 'unavailable' : denied.test(diagnostics) ? 'blocked' : 'partial';
     report(status, 'Missing or invalid Antigravity event stream', diagnostics);
