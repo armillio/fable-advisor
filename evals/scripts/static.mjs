@@ -54,6 +54,7 @@ function fixture(mode, verify=['test','-f','output.txt'], options={}) {
     writeFileSync(join(home,'.claude/fable-advisor/lanes.json'),JSON.stringify(options.config));
   }
   if (options.model !== undefined) env.FABLE_GEMINI_MODEL=options.model;
+  env.FIXTURE_SECRET=options.secret ?? '';
   env.EXPECTED_MODEL=options.expectedModel ?? 'gemini-3.8-flash-medium';
   symlinkSync(process.execPath,join(shim,'node'));
   // Even if the obsolete client is available it must never be called.
@@ -67,8 +68,9 @@ function fixture(mode, verify=['test','-f','output.txt'], options={}) {
   if (mode !== 'missing') {
     const script=`#!${process.execPath}
 const fs=require('fs');
-if(process.argv.includes('--version')) { console.log('1.2.12'); process.exit(0); }
+if(process.argv.includes('--version')) { if(process.env.SHIM_MODE==='version-secret'){console.error(process.env.FIXTURE_SECRET);process.exit(1);} console.log('1.2.12'); process.exit(0); }
 const mode=process.env.SHIM_MODE;
+if(process.env.FIXTURE_SECRET) console.error(process.env.FIXTURE_SECRET);
 const args=process.argv.slice(2);
 for(const flag of ['--sandbox','--mode','--model','--print-timeout','--input-format','--output-format']) if(!args.includes(flag))throw Error('Missing flag '+flag);
 if(args.includes('--approval-mode')||args.includes('--dangerously-skip-permissions')||args.includes('--disable-slash-commands')||args.includes('--prompt')) throw Error('Unsafe or incompatible flag');
@@ -82,7 +84,7 @@ if(model!==process.env.EXPECTED_MODEL)throw Error('Configured model was not pass
 console.log(JSON.stringify({event:'init',init:{model:mode==='wrong-model'?'gemini-3.7-flash-medium':model,permission_mode:'request-review'}}));
 if(mode==='soft-denial') {console.error('write_file was auto-denied');console.log(JSON.stringify({event:'step_update',step_update:{tool_info:{error:{type:'TOOL_ERROR',message:'user denied permission for write_file(note.txt)'}}}}));}
 if(!['nochange','soft-denial','event-timeout'].includes(mode))fs.writeFileSync('output.txt','implemented');
-console.log(JSON.stringify({event:'result',result:{status:mode==='event-timeout'?'TIMEOUT':mode==='error-event'?'ERROR':'SUCCESS',response:'Fixture response'}}));
+console.log(JSON.stringify({event:'result',result:{status:mode==='event-timeout'?'TIMEOUT':mode==='error-event'?'ERROR':'SUCCESS',response:process.env.FIXTURE_SECRET || 'Fixture response'}}));
 `;
     writeFileSync(join(shim,'agy'),script); chmodSync(join(shim,'agy'),0o755);
   }
@@ -135,6 +137,17 @@ check('saved legacy slug fails before model execution', () => {
 check('explicit model override takes precedence over saved choice', () => {
   const r=fixture('override',undefined,{config:{broad:{model:'gemini-3.8-flash-high'}},model:'gemini-3.8-flash-low',expectedModel:'gemini-3.8-flash-low'});
   assert(r.status===0,r.stdout+r.stderr);
+});
+check('runner reports redact GitHub credentials in every output channel', () => {
+  const tokens=['ghp_','gho_','ghu_','ghs_','ghr_','github_pat_'].map(prefix=>prefix+'x'.repeat(36));
+  const secret=tokens.join(' ');
+  const r=fixture('report-secret',['./verify',...tokens],{secret,verifier:`echo '${secret}'; exit 0`});
+  assert(r.status===0 && r.stdout.includes('STATUS: complete'),r.stdout+r.stderr);
+  for (const heading of ['VERIFIED:','GEMINI SAID:','DIAGNOSTICS:']) assert(r.stdout.includes(heading),'missing report channel');
+  assert(r.stdout.includes('<REDACTED>'),'no redaction evidence');
+  const early=fixture('version-secret',undefined,{secret});
+  assert(early.status!==0 && early.stdout.includes('STATUS: unavailable') && early.stdout.includes('<REDACTED>'),'early failure not reported');
+  for(const token of tokens) assert(![r.stdout,r.stderr,early.stdout,early.stderr].some(text=>text.includes(token)),'credential leaked');
 });
 check('verification arguments never undergo shell evaluation', () => {
   const literal='$(touch injected.txt); touch another.txt';

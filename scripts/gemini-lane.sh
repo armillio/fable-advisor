@@ -6,8 +6,11 @@ SPEC_SOURCE=${1:-}
 MODEL=${FABLE_GEMINI_MODEL-gemini-3.8-flash-medium}
 ROOT=${FABLE_WORKDIR:-$PWD}
 HERE=$(cd "$(dirname "$0")" && pwd)
+redact() {
+  sed -E 's/[Bb][Ee][Aa][Rr][Ee][Rr] [^[:space:]]+/Bearer <REDACTED>/g; s/(sk-[A-Za-z0-9_-]{12,}|AIza[A-Za-z0-9_-]{12,}|gh[pousr]_[A-Za-z0-9]{12,}|github_pat_[A-Za-z0-9_]{12,})/<REDACTED>/g'
+}
 fail() {
-  printf 'GEMINI REPORT\nLANE: gemini-implementer · Gemini 3.8 Flash (%s) · Antigravity CLI\nSTATUS: %s\nREASON: %s\n' "$MODEL" "$1" "$2"
+  printf 'GEMINI REPORT\nLANE: gemini-implementer · Gemini 3.8 Flash (%s) · Antigravity CLI\nSTATUS: %s\nREASON: %s\n' "$MODEL" "$1" "$2" | redact
   exit 1
 }
 command -v agy >/dev/null 2>&1 || fail unavailable 'agy not found on PATH; install Antigravity CLI and sign in interactively'
@@ -45,9 +48,7 @@ file_manifest() {
     else printf '%s\tMISSING\n' "$file"; fi
   done
 }
-redact() {
-  sed -E 's/Bearer [^[:space:]]+/Bearer <REDACTED>/g; s/sk-[A-Za-z0-9_-]{12,}/<REDACTED>/g; s/AIza[A-Za-z0-9_-]{12,}/<REDACTED>/g'
-}
+
 snapshot > "$RUN/before"
 file_manifest > "$RUN/files-before"
 T=$(command -v gtimeout || command -v timeout || true)
@@ -83,11 +84,13 @@ elif [ "$STATUS" = ready ]; then
     REASON=$(sed -n '2p' "$RUN/verification-summary")
   fi
 fi
+{
 printf 'GEMINI REPORT\nLANE: gemini-implementer · Gemini 3.8 Flash (%s) · Antigravity CLI\nSTATUS: %s\nOBJECTIVE: %s\nCHANGES:\n' "$MODEL" "$STATUS" "$(grep -m1 '^OBJECTIVE:' "$SPEC_FILE" | sed 's/^OBJECTIVE:[[:space:]]*//' || true)"
 (diff -u "$RUN/files-before" "$RUN/files-after" || true) | sed -n '/^[+-][^+-]/ { s/^[+-]//; p; }' | cut -f1 | sort -u
 printf 'VERIFIED: '; printf '%q ' "${VERIFY[@]}"; printf '\n%s\n' "$VERIFICATION"
-[ ! -f "$RUN/verification" ] || tail -n 30 "$RUN/verification" | redact
-printf 'GEMINI SAID:\n'; sed '1,2d' "$RUN/summary" | tail -n 30 | redact
-printf 'DIAGNOSTICS:\n'; tail -n 15 "$RUN/diagnostics" | redact
+[ ! -f "$RUN/verification" ] || tail -n 30 "$RUN/verification"
+printf 'GEMINI SAID:\n'; sed '1,2d' "$RUN/summary" | tail -n 30
+printf 'DIAGNOSTICS:\n'; tail -n 15 "$RUN/diagnostics"
 printf 'GAPS: %s\n' "$REASON"
+} | redact
 [ "$STATUS" = complete ]
