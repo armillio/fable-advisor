@@ -13,6 +13,8 @@ export function validateLanes(config, catalog) {
       }
     }
     if ('provider' in choice && choice.provider !== lane.provider) throw new Error(`Incompatible provider for ${name}`);
+    const modelLane = Object.values(catalog).find(candidate => candidate.options.some(option => option.id === choice.model));
+    if (modelLane && modelLane.provider !== lane.provider) throw new Error(`Incompatible model provider for ${name}: ${choice.model}`);
     const known = lane.options.find(option => option.id === choice.model);
     if ('effort' in choice && known?.efforts && !known.efforts.includes(choice.effort)) {
       throw new Error(`Unsupported ${name} effort`);

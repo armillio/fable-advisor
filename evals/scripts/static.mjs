@@ -1,10 +1,11 @@
 #!/usr/bin/env node
-import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, readdirSync, existsSync, chmodSync, symlinkSync } from 'node:fs';
+import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, readdirSync, existsSync, chmodSync, symlinkSync, lstatSync, readlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { sanitize } from './sanitize.mjs';
+import { validateLanes } from '../../scripts/validate-lanes.mjs';
 
 const root = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
 const read = path => readFileSync(join(root, path), 'utf8');
@@ -345,6 +346,35 @@ check('custom Codex models require explicit effort without changing config', () 
   const r=run(process.execPath,[join(root,'scripts/resolve-lanes.mjs'),target]);
   const value=JSON.parse(r.stdout);
   assert(r.status===0 && value.routine.effort==='medium' && value.complex.effort==='max','known model defaults lost');
+});
+check('known cross-provider models are rejected even with matching provider and effort', () => {
+  for(const [name,lane] of Object.entries(catalog)) {
+    for(const source of Object.values(catalog)) for(const model of source.options) {
+      for(const provider of [undefined,lane.provider]) {
+        const config={[name]:{model:model.id,effort:'low',...(provider?{provider}:{})}};
+        let error; try { validateLanes(config,catalog); } catch(e) { error=e; }
+        assert(source.provider===lane.provider ? !error : error?.message.includes('Incompatible model provider'),`${name}: ${model.id}`);
+      }
+    }
+    validateLanes({[name]:{provider:lane.provider,model:'custom-model',effort:'low'}},catalog);
+  }
+});
+check('resolver and saver reject incompatible model choices without rewriting config', () => {
+  const target=join(temp,'wrong-provider.json'), input=join(temp,'wrong-provider-choices.json');
+  for(const [name,lane] of Object.entries(catalog)) {
+    const model=Object.values(catalog).find(other=>other.provider!==lane.provider).recommended;
+    const wrong={provider:lane.provider,model,effort:'low'};
+    const raw=JSON.stringify({version:2,[name]:wrong}); writeFileSync(target,raw);
+    for(const [script,args] of [['resolve-lanes.mjs',[target]],['save-lanes.mjs',[join(temp,'choices.json'),target]]]) {
+      const r=run(process.execPath,[join(root,'scripts',script),...args]);
+      assert(r.status!==0 && r.stderr.includes('Incompatible model provider'),r.stdout+r.stderr);
+      assert(readFileSync(target,'utf8')===raw && !existsSync(target+'.lock'),'invalid existing config changed');
+    }
+    const old='{"version":2,"note":"preserved"}'; writeFileSync(target,old);
+    writeFileSync(input,JSON.stringify({...JSON.parse(readFileSync(join(temp,'choices.json'),'utf8')),[name]:wrong}));
+    const r=run(process.execPath,[join(root,'scripts/save-lanes.mjs'),input,target]);
+    assert(r.status!==0 && r.stderr.includes('Incompatible model provider') && readFileSync(target,'utf8')===old && !existsSync(target+'.lock'),'invalid confirmed choices accepted');
+  }
 });
 check('a live competing setup cannot overwrite confirmed choices', () => {
   const dir=join(temp,'concurrent'); mkdirSync(dir);
