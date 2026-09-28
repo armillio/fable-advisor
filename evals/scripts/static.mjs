@@ -111,6 +111,27 @@ for (const [mode,expected,verify] of [
 ]) {
   check(`Gemini ${mode} → ${expected}`, () => { const r=fixture(mode,verify); assert(r.stdout.includes(`STATUS: ${expected}`), `observed ${r.stdout}\n${r.stderr}`); assert(!existsSync(join(r.dir,'fallback.txt')), 'old client fallback invoked'); if (expected !== 'complete') assert(r.status !== 0, 'non-complete exit 0'); if (mode==='missing') assert(!existsSync(join(r.dir,'output.txt')), 'fallback wrote file'); if (mode==='success') assert(r.stdout.includes('CHANGES:\noutput.txt') && r.stdout.includes('VERIFIED: test -f output.txt'), 'missing diff or evidence'); });
 }
+check('scanner streams Git path lists larger than 1 MiB and rejects incomplete results', () => {
+  const dir=join(temp,'scan-large'); mkdirSync(dir);
+  const shim=join(temp,'scan-git-shim'); mkdirSync(shim);
+  const path='long-ü-path.txt'; writeFileSync(join(dir,path),'contents');
+  const payload=(path+'\0').repeat(100000);
+  assert(Buffer.byteLength(payload)>1024*1024,'fixture must exceed default exec buffer');
+  const input=join(temp,'scan-paths'); writeFileSync(input,payload);
+  const git=join(shim,'git');
+  const scan=()=>run(process.execPath,[join(root,'scripts/worktree-manifest.mjs')],{cwd:dir,env:{...process.env,PATH:shim+':'+basePath},timeout:10000});
+  writeFileSync(git,`#!/bin/sh\ncat '${input}'\n`); chmodSync(git,0o755);
+  const large=scan();
+  assert(large.status===0 && large.stdout.startsWith(path+'\tFILE:') && large.stdout.trim().split('\n').length===1,large.stdout+large.stderr);
+  writeFileSync(git,`#!/bin/sh\ncat '${input}'\nexit 1\n`);
+  const failed=scan(); assert(failed.status===1 && !failed.stdout,'partial Git output accepted');
+  writeFileSync(input,path);
+  writeFileSync(git,`#!/bin/sh\ncat '${input}'\n`);
+  const truncated=scan(); assert(truncated.status===1 && !truncated.stdout,'unterminated Git path accepted');
+  rmSync(git);
+  const missing=run(process.execPath,[join(root,'scripts/worktree-manifest.mjs')],{cwd:dir,env:{...process.env,PATH:shim},timeout:3000});
+  assert(missing.status===1 && !missing.stdout && missing.stderr.includes('Cannot safely fingerprint'),'spawn error not handled');
+});
 check('scanner fingerprints symlink identity without reading targets', () => {
   const dir=join(temp,'scan-links'); mkdirSync(dir); run('git',['init','-q',dir]);
   const outside=join(temp,'external-file'), fifo=join(temp,'external-fifo');

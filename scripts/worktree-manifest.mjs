@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Fingerprint reviewable paths without dereferencing symlinks or special files.
-import { execFileSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { lstatSync, readlinkSync, openSync, fstatSync, readSync, closeSync, constants } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { isAbsolute, join } from 'node:path';
@@ -41,9 +41,28 @@ function fingerprint(path) {
   } finally { closeSync(fd); }
 }
 
+async function worktreePaths() {
+  // Stream NUL-delimited paths rather than imposing execFileSync's output cap.
+  const git=spawn('git',['ls-files','-z','--cached','--others','--exclude-standard'],{stdio:['ignore','pipe','ignore']});
+  const finished=new Promise(resolve=>{
+    git.once('error',()=>resolve(false));
+    git.once('close',code=>resolve(code===0));
+  });
+  git.stdout.setEncoding('utf8');
+  const paths=new Set();
+  let pending='';
+  for await (const chunk of git.stdout) {
+    const parts=(pending+chunk).split('\0');
+    pending=parts.pop();
+    for (const path of parts) if(path) paths.add(path);
+  }
+  if(!await finished || pending) throw new Error('Incomplete Git path list');
+  return [...paths].sort();
+}
+
 try {
-  const paths=execFileSync('git',['ls-files','-z','--cached','--others','--exclude-standard'],{encoding:'utf8'}).split('\0').filter(Boolean);
-  const rows=[...new Set(paths)].sort().map(path=>`${JSON.stringify(path).slice(1,-1)}\t${fingerprint(path)}`);
+  const paths=await worktreePaths();
+  const rows=paths.map(path=>`${JSON.stringify(path).slice(1,-1)}\t${fingerprint(path)}`);
   process.stdout.write(rows.join('\n')+'\n');
 } catch {
   // Do not expose arbitrary path/error data, or treat an incomplete scan as evidence.
