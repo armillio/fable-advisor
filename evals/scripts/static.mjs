@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import { sanitize } from './sanitize.mjs';
 
 const root = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
 const read = path => readFileSync(join(root, path), 'utf8');
@@ -93,7 +94,13 @@ for (const [mode,expected,verify] of [
 ]) {
   check(`Gemini ${mode} → ${expected}`, () => { const r=fixture(mode,verify); assert(r.stdout.includes(`STATUS: ${expected}`), `observed ${r.stdout}\n${r.stderr}`); assert(!existsSync(join(r.dir,'fallback.txt')), 'old client fallback invoked'); if (expected !== 'complete') assert(r.status !== 0, 'non-complete exit 0'); if (mode==='missing') assert(!existsSync(join(r.dir,'output.txt')), 'fallback wrote file'); if (mode==='success') assert(r.stdout.includes('CHANGES:\noutput.txt') && r.stdout.includes('VERIFIED: test -f output.txt'), 'missing diff or evidence'); });
 }
-check('Codex preflight unavailable in isolated PATH', () => { const r=run('bash',['-lc','PATH=/usr/bin:/bin; command -v codex >/dev/null 2>&1'],{env:{...process.env,PATH:basePath}}); assert(r.status !== 0, 'Codex unexpectedly present in isolated PATH'); for (const file of ['agents/luna-implementer.md','agents/sol-implementer.md']) assert(read(file).includes('STATUS: unavailable'), file); });
+check('Codex preflight unavailable in isolated PATH', () => {
+  const emptyPath=join(temp,'no-executables'); mkdirSync(emptyPath);
+  const env={...process.env,PATH:emptyPath}; delete env.BASH_ENV; delete env.ENV;
+  const r=run('/bin/bash',['--noprofile','--norc','-c','command -v codex >/dev/null 2>&1'],{env});
+  assert(r.status===1,'isolated preflight did not report unavailable');
+  for (const file of ['agents/luna-implementer.md','agents/sol-implementer.md']) assert(read(file).includes('STATUS: unavailable'),file);
+});
 check('version-1 custom choices preserved', () => { const path=join(temp,'lanes-v1.json'); writeFileSync(path,JSON.stringify({version:1,routine:{provider:'openai',model:'custom-luna',effort:'low'},complex:{provider:'openai',model:'gpt-6-sol',effort:'high'},reviewer:{provider:'anthropic',model:'opus'}})); const r=run('node',[join(root,'scripts/resolve-lanes.mjs'),path]); assert(r.status===0,r.stderr); const value=JSON.parse(r.stdout); assert(value.broad.model==='gemini-3.8-flash-medium' && value.routine.model==='custom-luna' && value.routine.effort==='low' && value.reviewer.model==='opus','migration lost choices'); assert(JSON.parse(readFileSync(path,'utf8')).version===1,'resolver rewrote config'); });
 check('version-1 setup migration is backed up and atomic', () => { const target=join(temp,'save-test','lanes.json'); mkdirSync(dirname(target),{recursive:true}); const old={version:1,custom_setting:'keep',routine:{provider:'openai',model:'custom-luna',effort:'low'},complex:{provider:'openai',model:'gpt-6-sol',effort:'high'},reviewer:{provider:'anthropic',model:'opus'}}; writeFileSync(target,JSON.stringify(old)); const choices=join(temp,'choices.json'); writeFileSync(choices,JSON.stringify({routine:old.routine,broad:{provider:'google',model:'gemini-3.8-flash-medium'},complex:old.complex,reviewer:old.reviewer})); const r=run('node',[join(root,'scripts/save-lanes.mjs'),choices,target]); assert(r.status===0,r.stderr); const output=JSON.parse(r.stdout), saved=JSON.parse(readFileSync(target,'utf8')); assert(saved.version===2 && saved.custom_setting==='keep' && saved.routine.model==='custom-luna' && saved.reviewer.model==='opus' && saved.broad.model==='gemini-3.8-flash-medium','bad migration'); assert(JSON.parse(readFileSync(output.backup,'utf8')).version===1,'missing backup'); });
 check('invalid migration leaves existing config untouched', () => { const target=join(temp,'invalid-lanes.json'); const old='{"version":3,"custom":"keep"}'; writeFileSync(target,old); const choices=join(temp,'choices.json'); const r=run('node',[join(root,'scripts/save-lanes.mjs'),choices,target]); assert(r.status!==0,'accepted future version'); assert(readFileSync(target,'utf8')===old,'config changed'); });
@@ -168,6 +175,38 @@ writer.on('exit',code=>{if(code!==0||other.status===0||!other.stderr.includes('c
   assert(saved.broad.model===choices.broad.model && saved.custom_setting==='preserved','competing write lost choices');
   assert(!existsSync(`${target}.lock`),'successful save leaked lock');
 });
+check('behavior repeat count rejects invalid inputs before invoking Claude', () => {
+  const dir=join(temp,'repeat-test'); mkdirSync(dir);
+  const marker=join(dir,'invoked'); const cli=join(dir,'claude');
+  writeFileSync(cli,`#!${process.execPath}\nrequire('fs').writeFileSync(${JSON.stringify(marker)},'called');\n`); chmodSync(cli,0o755);
+  for(const value of ['abc','NaN','Infinity','0','-1','4','1.5','']) {
+    const r=run(process.execPath,[join(root,'evals/scripts/behavior.mjs')],{env:{...process.env,PATH:dir,FABLE_EVAL_REPEATS:value}});
+    assert(r.status===2 && r.stderr.includes('must be an integer'),`accepted repeat ${value}`);
+    assert(!existsSync(marker),'invalid repeats reached Claude');
+  }
+});
+check('behavior records and console recursively redact structured model output', () => {
+  const dir=join(temp,'behavior-redaction'); mkdirSync(dir);
+  const home=join(dir,'home'); mkdirSync(home);
+  const token='sk-proj-'+ 'x'.repeat(32), bearer='fixture-credential-value';
+  const reason=`${home}/private ${root}/private ${token} Bearer ${bearer}`;
+  const cli=join(dir,'claude');
+  writeFileSync(cli,`#!${process.execPath}\nif(process.argv.includes('auth')){console.log(JSON.stringify({loggedIn:true}));}else{console.log(JSON.stringify({structured_output:{lane:'routine',reason:${JSON.stringify(reason)},nested:[{${JSON.stringify(token)}:${JSON.stringify(reason)}}]}}));console.error(${JSON.stringify(reason)});}\n`);
+  chmodSync(cli,0o755);
+  const r=run(process.execPath,[join(root,'evals/scripts/behavior.mjs')],{env:{...process.env,PATH:dir,HOME:home,TMPDIR:dir,FABLE_EVAL_REPEATS:'1'},timeout:30000});
+  assert(r.status===1 && r.stdout.includes('FAIL'),'raw decision grading did not run');
+  assert(!r.stdout.includes(token) && !r.stdout.includes(bearer) && !r.stdout.includes(home) && !r.stdout.includes(root),'console leaked model output');
+  const records=join(dir,readdirSync(dir).find(name=>name.startsWith('fable-behavior-')));
+  const files=readdirSync(records); assert(files.length===18,'expected all 18 behavioral cases');
+  for(const name of files) {
+    const raw=readFileSync(join(records,name),'utf8'); JSON.parse(raw);
+    assert(!raw.includes(token) && !raw.includes(bearer) && !raw.includes(home) && !raw.includes(root),'transcript leaked model output');
+    assert(raw.includes('<REDACTED>') && raw.includes('<HOME>') && raw.includes('<PLUGIN>'),'missing recursive redaction');
+  }
+  const value=sanitize({reason:[reason]},root);
+  assert(value.reason[0].includes('<REDACTED>'),'nested sanitizer regression');
+});
+
 rmSync(temp,{recursive:true,force:true});
 let passed=tests.filter(x=>x[1]).length;
 console.log('Fable Advisor behavioral evals\n');
