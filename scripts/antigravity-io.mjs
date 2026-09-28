@@ -4,7 +4,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 const [command, ...args] = process.argv.slice(2);
-const authError = /unauthenticated|authentication required|failed to sign in|not logged in|login required|UNSUPPORTED_CLIENT|IneligibleTierError|client is no longer supported|model.*(?:not available|not found|not supported|unknown)|unknown model|invalid.*model|quota exceeded|api.key/i;
+const authError = /unauthenticated|authentication required|failed to sign in|not logged in|login required|UNSUPPORTED_CLIENT|IneligibleTierError|client is no longer supported|model.*(?:not available|not found|not supported|unknown)|unknown model|invalid.*model|quota exceeded|\b(?:missing|invalid|expired|revoked|rejected) api[ ._-]?key\b|\bapi[ ._-]?key (?:is )?(?:required|missing|invalid|expired|revoked|rejected)\b/i;
 const denied = /soft[- ]denied|permission denied|approval denied|requires? (?:user )?approval|denied.*(?:tool|permission)|(?:tool|permission).*denied|blocked by policy|operation not permitted|sandbox.*(?:denied|unavailable|not supported|failed)/i;
 const report = (status, reason, response = '') => process.stdout.write(`${status}\n${reason}\n${response}\n`);
 if (command === 'preflight') {

@@ -166,6 +166,21 @@ check('decoder classifies invalid event shapes without throwing', () => {
     }
   }
 });
+check('API-key mentions are not authentication failures', () => {
+  const output=join(temp,'auth-mentions.ndjson'), diagnostic=join(temp,'auth-mentions.stderr');
+  const model='gemini-3.8-flash-medium';
+  for(const [message,expected] of [
+    ['Read optional api.key setting','ready'],['API key is not required for account login','ready'],
+    ['api_key field is unset; using account credentials','ready'],
+    ['API key required','unavailable'],['Invalid API key','unavailable'],['API key is expired','unavailable']
+  ]) for(const channel of ['diagnostic','result.error']) {
+    writeFileSync(output,[{event:'init',init:{model,permission_mode:'request-review'}},
+      {event:'result',result:{status:'SUCCESS',response:'Finished',...(channel==='result.error'?{error:message}:{})}}].map(JSON.stringify).join('\n')+'\n');
+    writeFileSync(diagnostic,channel==='diagnostic'?message:'');
+    const r=run(process.execPath,[join(root,'scripts/antigravity-io.mjs'),'decode',output,diagnostic,model]);
+    assert(r.status===0 && r.stdout.startsWith(expected+'\n'),`${channel}: ${message}: ${r.stdout}${r.stderr}`);
+  }
+});
 check('ignored-only output does not claim completion or no filesystem changes', () => {
   const r=fixture('ignored-output',undefined,{ignoredOutput:true});
   assert(existsSync(join(r.dir,'output.txt')),'fixture produced no ignored edit');
