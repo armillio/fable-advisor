@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Atomically merge confirmed lane choices; never silently reset existing keys.
 import { readFileSync, existsSync, mkdirSync, rmdirSync, writeFileSync, renameSync, copyFileSync, unlinkSync, chmodSync, constants } from 'node:fs';
-import { homedir } from 'node:os';
+import { homedir, hostname } from 'node:os';
+import { setImmediate } from 'node:timers/promises';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { validateLanes } from './validate-lanes.mjs';
@@ -16,13 +17,32 @@ validateLanes(choices,catalog);
 const dir=dirname(target); mkdirSync(dir,{recursive:true,mode:0o700});
 // Fail rather than queue a competing setup and overwrite its confirmed choices.
 const lock=`${target}.lock`;
+const owner=join(lock,'owner.json');
+const temp=join(dir,`.lanes.${process.pid}.${Date.now()}.tmp`);
+let ownsLock=false;
+function cleanup() {
+  if (!ownsLock) return;
+  try { unlinkSync(temp); } catch (error) { if (error.code!=='ENOENT') throw error; }
+  try { unlinkSync(owner); } catch (error) { if (error.code!=='ENOENT') throw error; }
+  rmdirSync(lock);
+  ownsLock=false;
+}
+// Synchronous filesystem operations finish before JS signal handlers run.
+// Exit cleanup only removes this process's lock, never a competing writer's.
+const signals={SIGINT:130,SIGTERM:143,SIGHUP:129};
+const handlers=Object.entries(signals).map(([signal,code])=>[signal,()=>process.exit(code)]);
+process.on('exit',cleanup);
+for (const [signal,handler] of handlers) process.on(signal,handler);
 try { mkdirSync(lock,{mode:0o700}); }
 catch (error) {
-  if (error.code==='EEXIST') throw new Error('Another setup holds the lane configuration lock; reread choices before retrying');
+  if (error.code==='EEXIST') throw new Error(`Lane configuration lock exists at ${lock}; inspect owner.json and confirm no setup is running before manual recovery. Reread and reconfirm choices before retrying.`);
   throw error;
 }
-const temp=join(dir,`.lanes.${process.pid}.${Date.now()}.tmp`);
+ownsLock=true;
 try {
+  writeFileSync(owner,JSON.stringify({pid:process.pid,hostname:hostname(),started_at:new Date().toISOString(),temp})+'\n',{mode:0o600,flag:'wx'});
+  // Give pending termination signals a chance to stop before reading/writing config.
+  await setImmediate();
   const current=existsSync(target)?JSON.parse(readFileSync(target,'utf8')):{};
   validateLanes(current,catalog);
   const next={...current,version:2};
@@ -41,9 +61,11 @@ try {
   writeFileSync(temp,JSON.stringify(next,null,2)+'\n',{mode:0o600,flag:'wx'});
   JSON.parse(readFileSync(temp,'utf8'));
   if (backup) { copyFileSync(target,backup,constants.COPYFILE_EXCL); chmodSync(backup,0o600); }
+  await setImmediate();
   renameSync(temp,target);
   console.log(JSON.stringify({target,backup,version:2}));
 } finally {
-  try { unlinkSync(temp); } catch (error) { if (error.code!=='ENOENT') throw error; }
-  finally { rmdirSync(lock); }
+  cleanup();
+  process.off('exit',cleanup);
+  for (const [signal,handler] of handlers) process.off(signal,handler);
 }

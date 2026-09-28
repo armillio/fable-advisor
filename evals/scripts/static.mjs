@@ -241,6 +241,41 @@ writer.on('exit',code=>{if(code!==0||other.status===0||!other.stderr.includes('c
   assert(saved.broad.model===choices.broad.model && saved.custom_setting==='preserved','competing write lost choices');
   assert(!existsSync(`${target}.lock`),'successful save leaked lock');
 });
+check('setup termination signals release the owned lock without replacing config', () => {
+  for(const [signal,exitCode] of [['SIGINT',130],['SIGTERM',143],['SIGHUP',129]]) {
+    for(const phase of ['lock','temp']) {
+      const dir=join(temp,`signal-${signal}-${phase}`); mkdirSync(dir);
+      const target=join(dir,'lanes.json'), hook=join(dir,'interrupt.cjs');
+      const old=JSON.stringify({version:1,custom:'preserved'}); writeFileSync(target,old);
+      writeFileSync(hook,`const fs=require('node:fs'); const mkdir=fs.mkdirSync, write=fs.writeFileSync;
+fs.mkdirSync=function(path,...args){const result=mkdir.call(this,path,...args); if(${JSON.stringify(phase)}==='lock' && path===${JSON.stringify(target+'.lock')})process.kill(process.pid,${JSON.stringify(signal)});return result;};
+fs.writeFileSync=function(path,...args){const result=write.call(this,path,...args);if(${JSON.stringify(phase)}==='temp' && String(path).endsWith('.tmp'))process.kill(process.pid,${JSON.stringify(signal)});return result;};
+require('node:module').syncBuiltinESMExports();`);
+      const args=[join(root,'scripts/save-lanes.mjs'),join(temp,'choices.json'),target];
+      const r=run(process.execPath,['--require',hook,...args],{timeout:10000});
+      assert(r.status===exitCode,`${signal}/${phase}: ${r.status} ${r.signal} ${r.stderr}`);
+      assert(readFileSync(target,'utf8')===old,'interrupted save replaced config');
+      assert(!existsSync(target+'.lock') && !readdirSync(dir).some(name=>name.endsWith('.tmp')),'interrupted save leaked lock/temp');
+      const retry=run(process.execPath,args);
+      assert(retry.status===0,retry.stderr);
+    }
+  }
+});
+check('uncatchable setup termination preserves a diagnosable lock for manual recovery', () => {
+  const dir=join(temp,'killed-setup'); mkdirSync(dir);
+  const target=join(dir,'lanes.json'), hook=join(dir,'kill.cjs');
+  const old=JSON.stringify({version:1,custom:'preserved'}); writeFileSync(target,old);
+  writeFileSync(hook,`const fs=require('node:fs'); const write=fs.writeFileSync;
+fs.writeFileSync=function(path,...args){const result=write.call(this,path,...args);if(String(path).endsWith('/owner.json'))process.kill(process.pid,'SIGKILL');return result;};require('node:module').syncBuiltinESMExports();`);
+  const args=[join(root,'scripts/save-lanes.mjs'),join(temp,'choices.json'),target];
+  const killed=run(process.execPath,['--require',hook,...args],{timeout:10000});
+  assert(killed.signal==='SIGKILL','fixture did not terminate');
+  const ownerPath=join(target+'.lock','owner.json'), raw=readFileSync(ownerPath,'utf8'), owner=JSON.parse(raw);
+  assert(owner.pid>0 && owner.hostname && owner.started_at && owner.temp,'missing recovery metadata');
+  const retry=run(process.execPath,args);
+  assert(retry.status!==0 && retry.stderr.includes('manual recovery'),'orphan lock silently stolen');
+  assert(readFileSync(target,'utf8')===old && readFileSync(ownerPath,'utf8')===raw,'retry modified protected files');
+});
 check('behavior repeat count rejects invalid inputs before invoking Claude', () => {
   const dir=join(temp,'repeat-test'); mkdirSync(dir);
   const marker=join(dir,'invoked'); const cli=join(dir,'claude');
