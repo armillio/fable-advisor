@@ -61,6 +61,8 @@ The runner resolves `broad.model` from the user's configuration by default. Only
 
 The runner verifies the model in the init event, requires exactly one successful terminal result, compares before/after working-tree changes, and independently runs the supplied verification command. It uses the CLI's 20-minute timeout plus an external timeout when available. Unique temporary files are cleaned on exit. An empty diff is `refused`; a failed test or invalid event stream is `partial`; a timeout is `timeout`; auth/model errors are `unavailable`; a denied operation is `blocked`. No such result can become `complete` because the model claims success.
 
+Diff evidence covers tracked files and non-ignored untracked files only. Ignored secrets, dependencies, and build artifacts are deliberately excluded; an ignored-only change cannot establish completion. If the requested deliverable is ignored, stop for architect review of that specific path rather than scanning all ignored files or claiming an empty repository-wide change. No ignore rules or tracking state are changed automatically.
+
 Read the actual changed files yourself and surface deviations or judgment calls. Return:
 
 ```text

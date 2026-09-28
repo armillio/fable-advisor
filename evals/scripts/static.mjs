@@ -40,6 +40,7 @@ function fixture(mode, verify=['test','-f','output.txt'], options={}) {
   run('git',['init','-q',dir]); writeFileSync(join(dir,'README.md'),'fixture\n');
   run('git',['-C',dir,'add','README.md']); run('git',['-C',dir,'-c','user.name=Fixture','-c','user.email=fixture@example.invalid','commit','-qm','fixture']);
   const spec=join(dir,'spec.txt'); writeFileSync(spec,'OBJECTIVE: write output.txt\nVERIFICATION: '+verify.join(' ')+'\n');
+  if (options.ignoredOutput) writeFileSync(join(dir,'.gitignore'),'output.txt\n');
   if (options.verifier) {
     writeFileSync(join(dir,'verify'),`#!/bin/sh\necho invoked >> verifier-calls\n${options.verifier}\n`);
     chmodSync(join(dir,'verify'),options.verifierMode ?? 0o755);
@@ -110,6 +111,12 @@ check('decoder classifies invalid event shapes without throwing', () => {
       assert(!r.stderr.includes('TypeError'),'decoder threw instead of classifying');
     }
   }
+});
+check('ignored-only output does not claim completion or no filesystem changes', () => {
+  const r=fixture('ignored-output',undefined,{ignoredOutput:true});
+  assert(existsSync(join(r.dir,'output.txt')),'fixture produced no ignored edit');
+  assert(r.status!==0 && r.stdout.includes('STATUS: refused') && r.stdout.includes('No reviewable diff') && r.stdout.includes('ignored-only edits require architect inspection'),r.stdout+r.stderr);
+  assert(r.stdout.includes('not independently run'),'unreviewable change reached verification');
 });
 check('Codex preflight unavailable in isolated PATH', () => {
   const emptyPath=join(temp,'no-executables'); mkdirSync(emptyPath);

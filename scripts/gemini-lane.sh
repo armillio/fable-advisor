@@ -72,7 +72,7 @@ elif [ "$STATUS" = ready ]; then
   if [ "$RC" -ne 0 ]; then
     STATUS=partial; REASON="Antigravity exited $RC despite its success event"
   elif cmp -s "$RUN/before" "$RUN/after"; then
-    STATUS=refused; REASON='No implementation diff was produced'
+    STATUS=refused; REASON='No reviewable diff in tracked or non-ignored files; ignored-only edits require architect inspection'
   # Caller-approved argv only: never evaluate a shell string from the spec/model.
   elif "${VERIFY[@]}" > "$RUN/verification" 2>&1; then
     STATUS=complete; REASON='Independent verification passed'; VERIFICATION='independently executed; exit 0'
