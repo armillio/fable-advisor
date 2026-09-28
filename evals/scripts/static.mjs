@@ -49,7 +49,7 @@ function fixture(mode, verify=['test','-f','output.txt'], options={}) {
   const spec=join(dir,'spec.txt'); writeFileSync(spec,'OBJECTIVE: write output.txt\nVERIFICATION: '+verify.join(' ')+'\n');
   if (options.ignoredOutput) writeFileSync(join(dir,'.gitignore'),'output.txt\n');
   if (options.verifier) {
-    writeFileSync(join(dir,'verify'),`#!/bin/sh\necho invoked >> verifier-calls\n${options.verifier}\n`);
+    writeFileSync(join(dir,'verify'),`#!/bin/sh\necho invoked >> "$HOME/verifier-calls"\n${options.verifier}\n`);
     chmodSync(join(dir,'verify'),options.verifierMode ?? 0o755);
   }
   const shim=join(dir,'shim'); mkdirSync(shim);
@@ -101,7 +101,7 @@ console.log(JSON.stringify({event:'result',result:{status:mode==='event-timeout'
   if (mode === 'timeout') { writeFileSync(join(shim,'gtimeout'),'#!/bin/sh\nexit 124\n'); chmodSync(join(shim,'gtimeout'),0o755); }
   options.prepare?.(dir);
   const result=run('bash',[join(root,'scripts/gemini-lane.sh'),spec,...(options.legacyVerify ? [verify.join(' ')] : ['--',...verify])],{cwd:dir,env,timeout:15000,killSignal:'SIGKILL'});
-  return { ...result, dir };
+  return { ...result, dir, home };
 }
 for (const [mode,expected,verify] of [
   ['missing','unavailable'],['auth','unavailable'],['authmethod','unavailable'],['blocked','blocked'],['untrusted','blocked'],['nochange','refused'],
@@ -272,9 +272,29 @@ for (const [label,verifier,mode,expected,exitCode] of [
 ]) check(`verification ${label} → ${expected} without retry`, () => {
   const r=fixture('verify-denial',['./verify'],{verifier,verifierMode:mode});
   assert(r.status!==0 && r.stdout.includes(`STATUS: ${expected}`) && r.stdout.includes(`verification attempted; exit ${exitCode}`),r.stdout+r.stderr);
-  const calls=join(r.dir,'verifier-calls');
+  const calls=join(r.home,'verifier-calls');
   assert(mode===0o644 ? !existsSync(calls) : readFileSync(calls,'utf8')==='invoked\n','verifier retried or bypassed');
   assert(!existsSync(join(r.dir,'fallback.txt')),'fallback invoked');
+});
+for (const [label,verifier,expected,changes] of [
+  ['creates a file','echo generated > generated.txt','partial',['generated.txt','output.txt']],
+  ['reformats output','echo formatted > output.txt','partial',['output.txt']],
+  ['reverts implementation','rm output.txt','partial',[]],
+  ['deletes tracked file','rm README.md','partial',['README.md','output.txt']],
+  ['fails after editing','echo generated > generated.txt; exit 1','partial',['generated.txt','output.txt']],
+  ['denied after editing','echo generated > generated.txt; exit 126','blocked',['generated.txt','output.txt']]
+]) check(`verifier ${label} reports final changes without claiming completion`, () => {
+  const r=fixture('verify-mutation',['./verify'],{verifier});
+  assert(r.status!==0 && r.stdout.includes(`STATUS: ${expected}`) && r.stdout.includes('verifier changed reviewable files'),r.stdout+r.stderr);
+  const actual=r.stdout.split('CHANGES:\n')[1]?.split('VERIFIED:')[0].trim();
+  assert(actual?.split('\n').sort().join('\n')===[...changes].sort().join('\n'),`stale final changes: ${actual}`);
+  assert(readFileSync(join(r.home,'verifier-calls'),'utf8')==='invoked\n','verifier retried');
+});
+for(const exitCode of [0,126]) check(`unsafe post-verification scan at exit ${exitCode} cannot report stale evidence`, () => {
+  const r=fixture('verify-unsafe',['./verify'],{verifier:`rm README.md; mkfifo README.md; exit ${exitCode}`});
+  assert(r.status!==0 && r.stdout.includes(`STATUS: ${exitCode===126?'blocked':'partial'}`),r.stdout+r.stderr);
+  assert(r.stdout.includes('CHANGES:\nUnavailable: final worktree inspection failed\n') && r.stdout.includes('cannot safely inspect the worktree after verification'),r.stdout);
+  assert(readFileSync(join(r.home,'verifier-calls'),'utf8')==='invoked\n','verifier retried');
 });
 check('old shell-string verifier is rejected without execution', () => {
   const r=fixture('shell-string',['touch injected.txt'],{legacyVerify:true});

@@ -50,6 +50,7 @@ node "$HERE/antigravity-io.mjs" decode "$RUN/output.ndjson" "$RUN/diagnostics" "
 STATUS=$(head -n 1 "$RUN/summary")
 REASON=$(sed -n '2p' "$RUN/summary")
 VERIFICATION='not independently run'
+CHANGES_MANIFEST="$RUN/files-after"
 if [ "$RC" -eq 124 ]; then
   STATUS=timeout; REASON='Antigravity exceeded the 1200-second wall-clock limit'
 elif [ "$STATUS" = ready ]; then
@@ -57,20 +58,40 @@ elif [ "$STATUS" = ready ]; then
     STATUS=partial; REASON="Antigravity exited $RC despite its success event"
   elif cmp -s "$RUN/files-before" "$RUN/files-after"; then
     STATUS=refused; REASON='No reviewable diff in tracked or non-ignored files; ignored-only edits require architect inspection'
-  # Caller-approved argv only: never evaluate a shell string from the spec/model.
-  elif "${VERIFY[@]}" > "$RUN/verification" 2>&1; then
-    STATUS=complete; REASON='Independent verification passed'; VERIFICATION='independently executed; exit 0'
   else
+    # Caller-approved argv only: never evaluate a shell string from the spec/model.
+    "${VERIFY[@]}" > "$RUN/verification" 2>&1
     VERIFY_RC=$?
-    VERIFICATION="independent verification attempted; exit $VERIFY_RC"
-    node "$HERE/antigravity-io.mjs" verification "$RUN/verification" "$VERIFY_RC" > "$RUN/verification-summary" || fail partial 'Cannot classify verification failure'
-    STATUS=$(head -n 1 "$RUN/verification-summary")
-    REASON=$(sed -n '2p' "$RUN/verification-summary")
+    if [ "$VERIFY_RC" -eq 0 ]; then
+      STATUS=complete; REASON='Independent verification passed'; VERIFICATION='independently executed; exit 0'
+    else
+      VERIFICATION="independent verification attempted; exit $VERIFY_RC"
+      node "$HERE/antigravity-io.mjs" verification "$RUN/verification" "$VERIFY_RC" > "$RUN/verification-summary" || fail partial 'Cannot classify verification failure'
+      STATUS=$(head -n 1 "$RUN/verification-summary")
+      REASON=$(sed -n '2p' "$RUN/verification-summary")
+    fi
+    # Tests may format, generate, or remove files. Report the final state, but
+    # never assume those mutations were verified or automatically retry them.
+    if node "$HERE/worktree-manifest.mjs" > "$RUN/files-final"; then
+      CHANGES_MANIFEST="$RUN/files-final"
+      if ! cmp -s "$RUN/files-after" "$RUN/files-final"; then
+        [ "$STATUS" != complete ] || STATUS=partial
+        REASON="$REASON; verifier changed reviewable files; architect inspection and re-verification required"
+      fi
+    else
+      CHANGES_MANIFEST=''
+      [ "$STATUS" = blocked ] || STATUS=partial
+      REASON="$REASON; cannot safely inspect the worktree after verification"
+    fi
   fi
 fi
 {
 printf 'GEMINI REPORT\nLANE: gemini-implementer · Gemini 3.8 Flash (%s) · Antigravity CLI\nSTATUS: %s\nOBJECTIVE: %s\nCHANGES:\n' "$MODEL" "$STATUS" "$(grep -m1 '^OBJECTIVE:' "$SPEC_FILE" | sed 's/^OBJECTIVE:[[:space:]]*//' || true)"
-(diff -u "$RUN/files-before" "$RUN/files-after" || true) | sed -n '/^[+-][^+-]/ { s/^[+-]//; p; }' | cut -f1 | sort -u
+if [ -n "$CHANGES_MANIFEST" ]; then
+  (diff -u "$RUN/files-before" "$CHANGES_MANIFEST" || true) | sed -n '/^[+-][^+-]/ { s/^[+-]//; p; }' | cut -f1 | sort -u
+else
+  printf 'Unavailable: final worktree inspection failed\n'
+fi
 printf 'VERIFIED: '; printf '%q ' "${VERIFY[@]}"; printf '\n%s\n' "$VERIFICATION"
 [ ! -f "$RUN/verification" ] || tail -n 30 "$RUN/verification"
 printf 'GEMINI SAID:\n'; sed '1,2d' "$RUN/summary" | tail -n 30
