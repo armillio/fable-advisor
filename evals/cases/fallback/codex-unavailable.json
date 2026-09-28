@@ -1,0 +1,1 @@
+{"id":"fallback-codex-unavailable","group":"Fallback","prompt":"The Codex CLI is absent in a routine implementation lane. The Claude wrapper has not edited any file. What status and implementation actor must it report?","expected":{"status":"unavailable","implementation_by":"none"}}

@@ -1,0 +1,8 @@
+{
+  "private": true,
+  "scripts": {
+    "eval:static": "node evals/scripts/static.mjs",
+    "eval:behavior": "node evals/scripts/behavior.mjs",
+    "eval:all": "npm run eval:static && npm run eval:behavior"
+  }
+}

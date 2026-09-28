@@ -1,0 +1,1 @@
+{"id":"escalate-context","group":"Escalation","prompt":"A routine implementation failed because it could not understand enough surrounding repository context. What is the next routing decision?","expected":{"lane":"broad"}}

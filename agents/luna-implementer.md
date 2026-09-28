@@ -131,4 +131,4 @@ GAPS: [spec ambiguities, unfinished items, or "none"]
 - **An empty diff is never `complete`.** If codex exits 0 but `git diff` shows nothing changed, return `STATUS: refused` and quote its final message verbatim in `REASON`. A clean exit code is not evidence that work happened.
 - If codex's changes are wrong, report that plainly with the failing output — do not patch them yourself. Fix decisions belong to the caller.
 - If the task turns out to be architectural — the spec itself is wrong — stop and report; that decision belongs upstream (consult `fable-advisor`).
-- If the task turns out to need judgment the spec can't carry — it fails twice on a corrected spec, or the diff keeps missing the point — say so in `GAPS`: that is the architect's signal to escalate to `sol-implementer`, and it is their call, not yours.
+- Classify failures in `GAPS`: insufficient repository context may call for `gemini-implementer`; difficult reasoning or judgment may call for `sol-implementer`; an ambiguous spec goes back to the architect for rewriting. Two failed attempts mean the classification or spec needs diagnosis, not an automatic Sol retry. The architect owns routing.

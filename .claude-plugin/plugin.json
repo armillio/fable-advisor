@@ -1,7 +1,7 @@
 {
   "name": "fable-advisor",
-  "version": "6.1.0",
-  "description": "Architect-as-orchestrator for Claude Code on any session model: it writes specs and verdicts, GPT-6 Luna (via Codex, effort max by default) does the routine typing, GPT-6 Sol (effort high by default) takes the high-complexity one-offs, every step is labelled with its model, and Fable 5.1 reviews every deliverable before it ships.",
+  "version": "6.2.0",
+  "description": "Architect-as-orchestrator for Claude Code: GPT-6 Luna handles routine work, Gemini 3.8 Flash handles broad-context work, GPT-6 Sol handles complex work, and Fable 5.1 reviews every deliverable.",
   "author": {
     "name": "Dan McAteer",
     "url": "https://github.com/DannyMac180"
@@ -14,6 +14,7 @@
     "fable",
     "sol",
     "luna",
+    "gemini",
     "advisor",
     "orchestration",
     "architect",

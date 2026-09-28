@@ -1,105 +1,79 @@
 ---
 name: orchestration
-description: Routing doctrine for the architect-as-orchestrator pattern — how the session (on whatever model the user chose) delegates routine implementation to the GPT-6 Luna lane, escalates high-complexity one-offs to the GPT-6 Sol lane, keeps or overrides each lane's default reasoning effort, labels every delegation with its model, and gets every deliverable reviewed by the Fable advisor before reporting done. USE WHEN delegating implementation work, choosing between luna-implementer/sol-implementer lanes, choosing a reasoning effort for a lane, writing a spec for a subagent, deciding whether to consult fable-advisor, using the Codex plugin's review skills, managing session cost or token spend, or running any multi-task build where the session is the architect.
+description: Capability-based routing doctrine for a Claude Code session architect. Route routine implementation to Luna, broad-context implementation to Gemini, complex implementation to Sol, and every completed deliverable to the read-only Fable advisor for clean-context final review. Use for decomposition, implementation delegation, escalation, verification, race mode, setup choices, and commitment-boundary consultation.
 ---
 
 # Orchestration — the architect's routing doctrine
 
-The session is the architect: it owns requirements, architecture, decomposition, specs, routing, and verification. It should almost never type implementation code. The session runs on whatever model the user picked — this doctrine doesn't depend on it. Every implementation task gets routed to the cheapest adequate lane — escalation to Sol is deliberate, per task — at that lane's default reasoning effort unless the task gives a reason to override it, and every finished deliverable gets a Fable review before the architect reports done.
+The session is the architect: it owns requirements, architecture, decomposition, specifications, routing, verification, and the final verdict. The user chooses its Claude model; **Opus 5.5 is recommended, not automatically selected**. The architect emits judgment and specs, not implementation volume. Delegate code to the cheapest adequate implementation capability, inspect the result, verify independently, and obtain a clean-context Fable review before reporting a deliverable done.
 
-## Cost discipline — the prime directive
+## Capability lanes
 
-The economics of this pattern: the session model orchestrates (judgment-heavy, volume-light), GPT-6 Luna does the routine typing (volume-heavy, cheap, cross-vendor), GPT-6 Sol takes the hard one-offs (cross-vendor, expensive, only when judgment decides the outcome), and Fable 5.1 reviews in a clean context before anything ships. Three rules follow.
-
-**Emit judgment, not volume.** The architect's output is decomposition, specs, routing decisions, verdicts on diffs, and short reports. It does not type implementation code, test bodies, boilerplate, or config files. A code block longer than an interface signature or a few illustrative lines is a spec that hasn't been delegated yet — stop and delegate it. Fixing a lane's bug by hand is the same failure in disguise: send a corrected spec back to the lane instead.
-
-**Keep the context lean.** Everything in the architect's context is re-read at the session model's prices on every turn. Delegate broad exploration, codebase searches, and log-grepping to a cheap read-only agent and keep only the conclusions; read files yourself only when the decision genuinely depends on the exact code. Don't paste long files, full diffs, or verbose command output into the conversation when a path reference or an excerpt will do.
-
-**Reason once, then hand off.** Do the hard thinking — the architecture, the interface design, the debugging hypothesis — in one pass, capture it in the spec, and let the lane carry it from there. Re-deriving decisions across turns burns the premium twice.
-
-What stays with the architect regardless of cost: decomposition, interface design, hypothesis selection when debugging, spec writing, lane and effort routing, and judging verification evidence. Those tokens are what the premium is for — everything else is a candidate for delegation.
-
-## The lanes
-
-| Lane | Producer | Invoke | Route here when |
+| Capability | Current producer | Invoke | Appropriate work |
 |---|---|---|---|
-| Routine | GPT-6 Luna (`gpt-6-luna`, default effort `max`) | `luna-implementer` agent | The spec fully determines the outcome: boilerplate, wiring, CRUD, mechanical edits, straightforward features. **Default lane.** Requires the codex CLI. |
-| High-complexity | GPT-6 Sol (`gpt-6-sol`, default effort `high`, up to `ultra`) | `sol-implementer` agent | The outcome depends heavily on judgment the spec can't capture: subtle concurrency, non-trivial algorithms, security-sensitive paths, hard debugging, wide-blast-radius refactors — or the routine lane has already failed the task once. One-off escalations, never the default. Requires the codex CLI. |
-| Review | Fable 5.1 (inherits session effort) | `fable-advisor` agent | Not an implementation lane. Commitment boundaries and the mandatory end-of-deliverable review — see below. |
+| `routine` | GPT-6 Luna (`gpt-6-luna`, effort `max` by default) | `luna-implementer` | Fully specified, mechanical changes; straightforward features, wiring, CRUD, pattern-following tests. Default when the spec determines the answer. |
+| `broad` | Gemini 3.8 Flash (`gemini-3.8-flash-medium`) | `gemini-implementer` | Broad repository context, frontend/UI or design-system consistency, pattern discovery or propagation across modules. Context-heavy but not unusually hard reasoning. |
+| `complex` | GPT-6 Sol (`gpt-6-sol`, effort `high` by default) | `sol-implementer` | Difficult unresolved judgment; subtle concurrency, races, security/cryptography, high-risk migrations or data loss, hard sync semantics, or debugging that resisted a capable attempt. |
+| `reviewer` | Fable 5.1 (`fable`) | `fable-advisor` | Read-only commitment-boundary advice and mandatory final review. Never implementation. |
 
-**User-pinned lane models.** Before the first delegation, read `~/.claude/fable-advisor/lanes.json` if it exists (written by `/fable-advisor:setup`). Its choices override the defaults in the table above: put `routine.model` / `complex.model` into the spec's model line and their `effort` as the default `REASONING:` rung for `luna-implementer` / `sol-implementer`, and pass `reviewer.model` as the Agent tool's `model` when calling `fable-advisor`. Label delegations with the pinned model, not the default. If the file is missing, use the defaults and suggest `/fable-advisor:setup` once.
+The broad wrapper invokes Antigravity CLI (`agy`) with the user's signed-in account, never an API-key fallback. Explicit legacy `gemini-3.8-flash` pins require a user-confirmed setup change to an Antigravity slug; do not silently remap them.
 
-Deciding rule: how much does the outcome depend on judgment the spec can't capture? Little → the default Luna lane; you will verify anyway. A lot, and mistakes are costly → escalate to `sol-implementer`, or keep that piece with the architect. A routine-lane task that fails its spec once gets a corrected spec; twice, it escalates to Sol — repetition is evidence the task was misclassified.
+The wrappers are lightweight Claude subagents; the external model actually writes implementation. A missing, unauthenticated, blocked, or unavailable provider is **not** permission to let the Claude wrapper type code or silently substitute a different model.
 
-Both implementation lanes are the cross-vendor half of the pattern: their output comes from a non-Anthropic family, so the Claude architect's verification and the Fable review are genuine cross-vendor checks, not same-family self-review.
+### Read user configuration
 
-If a lane returns `blocked`, Claude Code's permission system denied its codex run. Report the denial text to the user and let them decide: allow the command, or keep the piece with the architect. Never send the lane back with a reworded prompt to get past the block. If either lane returns `unavailable` or `timeout`, say so explicitly in your report and decide: re-route to the other codex lane (Luna ↔ Sol), or keep the piece with the architect. Never quietly absorb the substitution or the cost change. Both lanes fail loudly on a missing or unauthenticated codex CLI — there is no Claude fallback inside a lane by design.
+Before delegation, run the bundled read-only resolver (`node "${CLAUDE_PLUGIN_ROOT}/scripts/resolve-lanes.mjs"`) or read `~/.claude/fable-advisor/lanes.json` with equivalent rules. Version 1 remains valid: preserve its `routine`, `complex`, and `reviewer` choices and resolve a missing `broad` to the catalog's `gemini-3.8-flash-medium` recommendation. Version 2 adds `broad`; missing individual keys use built-in defaults. Do not rewrite user configuration as part of routing. Reject incompatible provider/model pairings rather than silently running a different CLI. Use the configured model and effort in the spec/delegation label, with the reviewer model passed to the Agent call. Suggest `/fable-advisor:setup` once if no file exists. Never assume a setup choice proves the CLI is authenticated or the model accessible.
 
-## Choosing the reasoning effort
+### Four routing questions
 
-Each lane has a default effort: **Luna runs at `max`, Sol at `high`**. A spec with no `REASONING:` line runs at the default; a spec that names a rung overrides it, and the lane passes that rung through unchanged. Override deliberately — drop Luna to `low`/`medium` for purely mechanical edits where `max` only buys wall-clock, and raise Sol to `xhigh`/`max`/`ultra` when the task has already resisted an attempt or the blast radius is wide.
+1. How completely does the spec determine the correct implementation?
+2. How much broad repository/context understanding is required?
+3. How much unresolved difficult judgment remains?
+4. How expensive would a wrong implementation be?
 
-| Rung | Luna | Sol | Use for |
-|---|---|---|---|
-| `low` / `medium` | ✓ | ✓ | Mechanical edits, renames, wiring, boilerplate, config, tests that mirror an existing pattern |
-| `high` | ✓ | ✓ | Ordinary features with a couple of design decisions left to the lane; most routine work with real logic in it |
-| `xhigh` | ✓ | ✓ | Tricky logic, multi-file changes with interactions, the second attempt after a spec correction |
-| `max` | ✓ | ✓ | The hardest single-lane tasks: concurrency, security-sensitive paths, gnarly debugging |
-| `ultra` | — | ✓ | Sol only. Maximum reasoning plus codex's own internal task delegation — slow; reserve for wide-blast-radius refactors and problems that have resisted two attempts |
+Fully specified + mechanical → `routine`. Broad context + UI/frontend or repository-wide pattern understanding → `broad`. Difficult reasoning + concurrency/security/migrations/high-risk debugging → `complex`. **Do not route by file count alone.** An architecture choice is owned by the architect, with `reviewer` consultation at the commitment boundary; it is not an implementation delegation.
 
-Luna has no `ultra` and the lane will refuse rather than round it; a task that seems to need `ultra` is a task for Sol. The lanes always pass an effort to codex, so the user's own codex config never decides it silently.
+### Escalation and failure classification
 
-The architect's own effort and the advisor's come from the session (`/effort`), since Claude Code sets subagent effort per agent definition, not per call. Raise the session effort before an architecture decision or a final review that deserves it; drop it back for routine turns.
+- `routine` failed for insufficient surrounding context → rewrite the spec as needed and route `broad`.
+- `routine` had context but lacked difficult reasoning/judgment → route `complex`.
+- `routine` exposed ambiguity or contradictory requirements → architect resolves and rewrites the spec before any retry.
+- `broad` understood context but implementation/reasoning failed → route `complex` with evidence.
+- `broad` exposed ambiguity → architect rewrites the spec. It exposed an architectural issue → architect owns the decision, optionally consulting `reviewer` at the commitment boundary.
+- Two repeated failed attempts are evidence that classification, architecture, or spec may be wrong. Pause and diagnose rather than retrying the same prompt.
+- `blocked` → surface the denial verbatim and let the user/architect decide; never reword a prompt, alter flags, or change execution mode to bypass it.
+- `unavailable` or `timeout` → report it explicitly. Any different lane or model is an **announced architect decision**, not a silent fallback.
 
-## Showing which model runs each step
+No implementation lane may expand scope or change architecture without returning that decision to the architect.
 
-Claude Code's UI shows each subagent call by its agent name and the `description` you pass, and the lane wrappers themselves run on Sonnet — so without a label, nobody watching can tell that GPT-6 is doing the typing. Make every step's model visible:
+## Cost discipline and effort
 
-- **Label the Agent `description`** with the model and effort, in the form `<Model> · <effort>: <task>` — for example `GPT-6 Luna · max: add pagination to /orders`, `GPT-6 Sol · xhigh: fix token-refresh race`, `Fable 5.1: final review`.
-- **Announce the routing** in one line before each delegation: `→ luna-implementer · GPT-6 Luna · max (default)`, or `(override)` when the spec names the rung. For the advisor: `→ fable-advisor · Fable 5.1`.
-- **Keep the lane's `LANE:` line** when you summarize a report. It names the model and the effort that actually ran, and whether it came from the spec or the default.
+Emit judgment, not volume: the architect writes specs and evaluates diffs, rather than typing boilerplate, tests, or fixes. Keep context lean by delegating broad read-only exploration where possible and bringing back conclusions, not full logs. Reason once, capture the decision in a complete spec, then hand off.
 
-The agents also carry a UI colour (Luna blue, Sol orange, advisor purple) so the lanes are easy to tell apart in the transcript.
+Codex lanes retain their existing effort contract. Luna defaults to `max` and supports `low`, `medium`, `high`, `xhigh`, `max`; Sol defaults to `high` and also supports `ultra`. The spec's optional `REASONING: <effort>` overrides the default exactly; do not round unsupported rungs. Use low/medium for mechanical work, high/xhigh for interactions, max for truly hard work, and Sol's ultra only when worth its extra cost. The Antigravity adapter selects the Medium Gemini model variant by slug and has **no separate effort override**; do not translate Codex effort values. The architect and advisor inherit Claude session effort.
 
-## The spec contract
+Label each delegation in the UI with the actual model (`GPT-6 Luna · max: ...`, `Gemini 3.8 Flash: ...`, `GPT-6 Sol · high: ...`, `Fable 5.1: final review`), and announce the routing choice in one line. Retain the lane report's `LANE:` line when summarizing so the model that actually ran remains visible.
 
-Implementers share none of your conversation context. Every delegation prompt carries all six parts:
+## Spec contract
 
-1. **Objective** — what to build or change, one paragraph
-2. **Files** — exact paths to create or modify
-3. **Interfaces** — signatures, types, or API shapes the code must match
-4. **Constraints** — project conventions, things not to touch
-5. **Verification** — the command(s) that prove it works
-6. **Reasoning** — optional: one line, `REASONING: <effort>`, only when overriding the lane's default
+Implementers share none of the conversation context. Every delegation carries objective, exact files, interfaces, constraints, verification command(s), and an optional `REASONING:` override for Codex only. Include model pin and relevant surrounding context explicitly. If the architect cannot finish the spec without leaving an architectural choice to the lane, make that choice first or consult the reviewer. An implementer must surface significant judgment calls rather than silently enlarging scope.
 
-A spec you can't finish writing is a signal the decision isn't made yet — that's architect work, not a reason to hand the ambiguity to a cheaper model.
+## Parallelism and opt-in race mode
 
-## Parallelism
+Independent specs without shared files or ordering dependencies may run in parallel. For valuable or high-stakes comparisons, the architect may **opt in** to racing `routine` vs `broad`, `broad` vs `complex`, or `routine` vs `complex` on the same spec. Use isolated worktrees or otherwise non-overlapping working directories so candidates cannot overwrite each other. It is not the default for routine work, and the first finish is not the winner. The architect compares **actual diffs, independently executed verification, scope adherence, unnecessary complexity, judgment calls, architecture consistency, and test behavior**. It chooses a result or asks for revision; a runner's success claim is not the verdict.
 
-Independent specs (no shared files, no ordering dependency) launch as parallel agents in a single message. Sequential chains and single-file surgery stay serial. For high-stakes work, run `luna-implementer` and `sol-implementer` on the same spec and let the architect pick the stronger diff — two capability tiers, one judged result.
+## Verification and final review
 
-## Commitment boundaries and the final review
+Every implementation report is a claim until checked. The architect reads the actual diff and reruns or validates the verification command against the working tree. A model saying tests pass is not equivalent to independent execution. An empty implementation diff, failing verification, timeout, or blocked command cannot become `complete` merely because the model says so. Surface evidence and gaps in the report.
 
-Consult `fable-advisor` (read-only, verdict in under 300 words) at the moments that decide whether the next hour is wasted:
+For every deliverable, the required order is:
 
-- Before committing to an architecture, data migration, API shape, or refactor strategy
-- Whenever the same problem has resisted two distinct attempts
-- **Always, once, at the end of a deliverable** — the advisor reads the accumulated changes with fresh eyes, against the stated goal rather than the conversation, and returns ship / fix-first / rethink. The architect does not report done before this review.
+```text
+implementation → architect diff/evidence inspection → architect verification → fable-advisor clean-context final review → completion
+```
 
-Pass it the decision (or, for final review, the diff and the stated goal), the constraints, and the options considered. Act on the verdict or surface the disagreement — never silently ignore it.
+Consult `fable-advisor` before architecture decisions, migrations, API shapes, major refactor strategies, and after two failed attempts. At the end, give it the stated goal, accumulated diff, constraints, and verification evidence. It returns ship / fix-first / rethink and remains read-only. Act on its verdict or surface disagreement. **Do not report done before this final review unless the user explicitly disables it.** The user may override the reviewer model in setup, but the default remains Fable 5.1; do not replace it merely because Opus 5.5 is recommended for the session architect.
 
-What the review buys depends on the session model. When the architect runs on something other than Fable (Opus 5.5, say), the final review is a second model — and the strongest one — reading the diff in a clean context. When the architect is also Fable, it is the same model, so it is a fresh-eyes check rather than an independent-model check: still worth it, because it reads the diff against the goal rather than the conversation, without the assumptions the architect accumulated while writing the specs. Cross-vendor independence comes from the codex lanes producing the code, and, when the Codex plugin is installed, from its review skills (below).
+## Optional Codex plugin
 
-## The Codex plugin (optional)
-
-If the official OpenAI Codex plugin for Claude Code is installed (`codex@openai-codex` under `enabledPlugins` in the user's Claude Code settings; `/plugin list` shows it), its commands become available in the session. It talks to the local `codex` binary over its app-server protocol, so it shares the same install and login as the lanes. The doctrine uses it three ways:
-
-- **`/codex:adversarial-review`** — run it on the accumulated diff *before* the `fable-advisor` final review on any deliverable that touched a security-sensitive path, a migration, or an API shape. It is a GPT-family reviewer and so an independent-model check on the Claude reviewer's blind spots. Feed its findings into the advisor consult as context. `/codex:review` is the lighter pass for ordinary deliverables when the user wants cross-vendor review.
-- **`/codex:rescue --model <slug> --effort <rung>`** — a write-capable delegation the user can drive directly, with `/codex:status`, `/codex:result`, and `/codex:cancel` for background jobs. Use it when the user asks for it, or for a long-running investigation you want off the session's critical path. It caps effort at `xhigh` and returns Codex's output rather than the lane report, so the architect still reads the diff and re-runs verification itself. For `max`/`ultra`, or whenever you want the structured report and the empty-diff check, use the lanes.
-- **`/codex:setup`** — point the user here when a lane reports `unavailable`; it verifies the binary, version, and login.
-
-The plugin's optional stop-time review gate (`/codex:setup --enable-review-gate`) runs a Codex review every time the session stops; it overlaps with the mandatory advisor review and can loop, so leave it off under this pattern unless the user chooses otherwise. Without the plugin the pattern is unchanged — it adds a reviewer and a manual delegation path, it is not a dependency.
-
-## Verification
-
-Reports are claims, not evidence. Before accepting any lane's work: read the diff, and re-run the verification command (or spot-check its quoted output against the working tree). "Should work", "tests should pass", or a report with no command output means the task is not done. An empty diff with a clean exit is a refusal, not a success — the lanes report it as `refused`; treat it as one. A lane that reports a spec gap gets a corrected spec, not a "use your judgment".
+When the official Codex plugin is installed, `/codex:adversarial-review` can precede the Fable final review for security-sensitive paths, migrations, or API changes; `/codex:review` is a lighter optional independent pass. `/codex:rescue` is a user-driven delegation path, not a replacement for these structured lane reports. `/codex:setup` can diagnose an unavailable Codex CLI. These commands add capabilities but are not required; keep the Fable review as the final gate.

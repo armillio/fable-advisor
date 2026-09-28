@@ -1,0 +1,1 @@
+{"id":"verification-claim","group":"Verification","prompt":"The implementation model says tests pass but there is no independently executed verification output. May the architect mark the deliverable complete?","expected":{"complete":false}}

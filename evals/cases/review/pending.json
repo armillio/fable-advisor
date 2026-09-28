@@ -1,0 +1,1 @@
+{"id":"final-review-pending","group":"Final-review","prompt":"Implementation diff was inspected and verification passed, but fable-advisor has not yet reviewed the deliverable. What must happen next, and may the architect announce completion now?","expected":{"next_action":"fable_review","complete":false}}

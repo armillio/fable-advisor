@@ -1,0 +1,1 @@
+{"id":"escalate-reasoning","group":"Escalation","prompt":"A routine implementation had sufficient context but failed twice on concurrency behavior. What is the next routing decision?","expected":{"lane":"complex"}}

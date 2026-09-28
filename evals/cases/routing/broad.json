@@ -1,0 +1,1 @@
+{"id":"broad-dashboard","group":"Routing","prompt":"Inspect the existing design system and dashboard implementations across the repository, then identify the appropriate lane for building a new dashboard using those established patterns.","expected":{"lane":"broad"}}

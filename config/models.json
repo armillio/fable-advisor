@@ -9,6 +9,13 @@
         { "id": "gpt-6-sol", "label": "GPT-6 Sol", "efforts": ["low", "medium", "high", "xhigh", "max", "ultra"], "default_effort": "medium" }
       ]
     },
+    "broad": {
+      "provider": "google",
+      "recommended": "gemini-3.8-flash-medium",
+      "options": [
+        { "id": "gemini-3.8-flash-medium", "label": "Gemini 3.8 Flash (Medium) · Antigravity account" }
+      ]
+    },
     "complex": {
       "provider": "openai",
       "recommended": "gpt-6-sol",

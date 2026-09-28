@@ -1,0 +1,1 @@
+{"id":"routine-rename","group":"Routing","prompt":"Rename CustomerDTO to CustomerResponse in the listed files and update tests following the existing pattern.","expected":{"lane":"routine"}}
