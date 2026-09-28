@@ -56,6 +56,7 @@ function fixture(mode, verify=['test','-f','output.txt'], options={}) {
   }
   if (options.model !== undefined) env.FABLE_GEMINI_MODEL=options.model;
   env.FIXTURE_SECRET=options.secret ?? '';
+  env.FIXTURE_LINK_TARGET=options.linkTarget ?? '';
   env.EXPECTED_MODEL=options.expectedModel ?? 'gemini-3.8-flash-medium';
   symlinkSync(process.execPath,join(shim,'node'));
   // Even if the obsolete client is available it must never be called.
@@ -84,13 +85,15 @@ const model=args[args.indexOf('--model')+1];
 if(model!==process.env.EXPECTED_MODEL)throw Error('Configured model was not passed intact');
 console.log(JSON.stringify({event:'init',init:{model:mode==='wrong-model'?'gemini-3.7-flash-medium':model,permission_mode:'request-review'}}));
 if(mode==='soft-denial') {console.error('write_file was auto-denied');console.log(JSON.stringify({event:'step_update',step_update:{tool_info:{error:{type:'TOOL_ERROR',message:'user denied permission for write_file(note.txt)'}}}}));}
-if(!['nochange','soft-denial','event-timeout'].includes(mode))fs.writeFileSync('output.txt','implemented');
+if(mode==='symlink-output')fs.symlinkSync(process.env.FIXTURE_LINK_TARGET,'output.txt');
+else if(!['nochange','soft-denial','event-timeout'].includes(mode))fs.writeFileSync('output.txt','implemented');
 console.log(JSON.stringify({event:'result',result:{status:mode==='event-timeout'?'TIMEOUT':mode==='error-event'?'ERROR':'SUCCESS',response:process.env.FIXTURE_SECRET || 'Fixture response'}}));
 `;
     writeFileSync(join(shim,'agy'),script); chmodSync(join(shim,'agy'),0o755);
   }
   if (mode === 'timeout') { writeFileSync(join(shim,'gtimeout'),'#!/bin/sh\nexit 124\n'); chmodSync(join(shim,'gtimeout'),0o755); }
-  const result=run('bash',[join(root,'scripts/gemini-lane.sh'),spec,...(options.legacyVerify ? [verify.join(' ')] : ['--',...verify])],{cwd:dir,env});
+  options.prepare?.(dir);
+  const result=run('bash',[join(root,'scripts/gemini-lane.sh'),spec,...(options.legacyVerify ? [verify.join(' ')] : ['--',...verify])],{cwd:dir,env,timeout:15000,killSignal:'SIGKILL'});
   return { ...result, dir };
 }
 for (const [mode,expected,verify] of [
@@ -101,6 +104,57 @@ for (const [mode,expected,verify] of [
 ]) {
   check(`Gemini ${mode} → ${expected}`, () => { const r=fixture(mode,verify); assert(r.stdout.includes(`STATUS: ${expected}`), `observed ${r.stdout}\n${r.stderr}`); assert(!existsSync(join(r.dir,'fallback.txt')), 'old client fallback invoked'); if (expected !== 'complete') assert(r.status !== 0, 'non-complete exit 0'); if (mode==='missing') assert(!existsSync(join(r.dir,'output.txt')), 'fallback wrote file'); if (mode==='success') assert(r.stdout.includes('CHANGES:\noutput.txt') && r.stdout.includes('VERIFIED: test -f output.txt'), 'missing diff or evidence'); });
 }
+check('scanner fingerprints symlink identity without reading targets', () => {
+  const dir=join(temp,'scan-links'); mkdirSync(dir); run('git',['init','-q',dir]);
+  const outside=join(temp,'external-file'), fifo=join(temp,'external-fifo');
+  writeFileSync(outside,'first external contents');
+  assert(run('mkfifo',[fifo]).status===0,'cannot create FIFO fixture');
+  symlinkSync(outside,join(dir,'tracked-link')); run('git',['-C',dir,'add','tracked-link']);
+  symlinkSync(outside,join(dir,'untracked-link')); symlinkSync(fifo,join(dir,'fifo-link'));
+  symlinkSync(join(temp,'does-not-exist'),join(dir,'broken-link'));
+  const scan=()=>run(process.execPath,[join(root,'scripts/worktree-manifest.mjs')],{cwd:dir,timeout:3000,killSignal:'SIGKILL'});
+  const before=scan(); assert(before.status===0,before.stderr);
+  assert(before.stdout.trim().split('\n').every(line=>line.includes('\tLINK:')),'link treated as regular file');
+  writeFileSync(outside,'different external contents');
+  assert(scan().stdout===before.stdout,'scanner fingerprinted external content');
+  rmSync(join(dir,'untracked-link')); symlinkSync(fifo,join(dir,'untracked-link'));
+  const after=scan(); assert(after.status===0 && after.stdout!==before.stdout,'retargeted link was invisible');
+  assert(!after.stdout.includes(outside) && !after.stdout.includes('external contents'),'target data exposed');
+});
+check('runner handles links to FIFOs both before and after implementation', () => {
+  const fifo=join(temp,'runner-external-fifo'); assert(run('mkfifo',[fifo]).status===0,'FIFO fixture failed');
+  const r=fixture('symlink-output',['test','-L','output.txt'],{linkTarget:fifo,prepare:dir=>symlinkSync(fifo,join(dir,'existing-link'))});
+  assert(r.status===0 && r.stdout.includes('STATUS: complete') && r.stdout.includes('CHANGES:\noutput.txt'),r.stdout+r.stderr);
+});
+check('runner rejects tracked paths replaced by special files before model execution', () => {
+  // Git does not enumerate new FIFOs; replacing a tracked file exercises the guard.
+  const r=fixture('special-file',undefined,{prepare:dir=>{
+    rmSync(join(dir,'README.md'));
+    assert(run('mkfifo',[join(dir,'README.md')]).status===0,'FIFO fixture failed');
+  }});
+  assert(r.status!==0 && r.stdout.includes('STATUS: partial') && !existsSync(join(r.dir,'output.txt')),r.stdout+r.stderr);
+});
+check('scanner reports deletions and rejects symlinked tracked parents', () => {
+  const dir=join(temp,'scan-parent'); mkdirSync(dir); run('git',['init','-q',dir]);
+  mkdirSync(join(dir,'nested')); writeFileSync(join(dir,'nested','file'),'tracked');
+  run('git',['-C',dir,'add','nested/file']); rmSync(join(dir,'nested'),{recursive:true});
+  const scan=()=>run(process.execPath,[join(root,'scripts/worktree-manifest.mjs')],{cwd:dir,timeout:3000,killSignal:'SIGKILL'});
+  const missing=scan(); assert(missing.status===0 && missing.stdout.includes('nested/file\tMISSING'),missing.stderr);
+  const outside=join(temp,'outside-dir'); mkdirSync(outside); writeFileSync(join(outside,'file'),'outside');
+  symlinkSync(outside,join(dir,'nested'));
+  const linked=scan(); assert(linked.status!==0 && linked.stderr.includes('Cannot safely fingerprint'),linked.stdout+linked.stderr);
+});
+for(const kind of ['symlink','fifo']) check(`scanner rejects a leaf swapped to ${kind} before open`, () => {
+  const dir=join(temp,'scan-swap-'+kind); mkdirSync(dir); run('git',['init','-q',dir]);
+  writeFileSync(join(dir,'swap.txt'),'regular');
+  const hook=join(temp,`swap-${kind}.cjs`);
+  writeFileSync(hook,`const fs=require('node:fs'), cp=require('node:child_process'); const open=fs.openSync;
+fs.openSync=function(path,...args){if(path==='swap.txt'){fs.unlinkSync(path);
+if(${JSON.stringify(kind)}==='symlink')fs.symlinkSync(${JSON.stringify(join(temp,'external-file'))},path);else cp.execFileSync('mkfifo',[path]);}
+return open.call(this,path,...args);};require('node:module').syncBuiltinESMExports();`);
+  const r=run(process.execPath,['--require',hook,join(root,'scripts/worktree-manifest.mjs')],{cwd:dir,timeout:3000,killSignal:'SIGKILL'});
+  assert(r.status===1 && r.stderr.includes('Cannot safely fingerprint') && !r.stdout,r.stdout+r.stderr);
+});
 check('decoder classifies invalid event shapes without throwing', () => {
   const output=join(temp,'invalid-events.ndjson'), diagnostic=join(temp,'invalid-events.stderr');
   for (const event of [null,42,true,'text',[],{}, {event:null}]) {

@@ -35,22 +35,7 @@ trap 'rm -rf "$RUN"' EXIT
 SPEC_FILE="$RUN/spec.txt"
 cp "$SPEC_SOURCE" "$SPEC_FILE" || fail partial 'Cannot copy full specification'
 node "$HERE/antigravity-io.mjs" encode "$SPEC_FILE" > "$RUN/input.ndjson" || fail partial 'Cannot encode full specification'
-snapshot() {
-  git diff --no-ext-diff --binary HEAD 2>/dev/null
-  git ls-files --others --exclude-standard -z | while IFS= read -r -d '' file; do
-    printf 'UNTRACKED %s\n' "$file"
-    cksum "$file" 2>/dev/null || true
-  done
-}
-file_manifest() {
-  git ls-files -z --cached --others --exclude-standard | while IFS= read -r -d '' file; do
-    if [ -f "$file" ]; then printf '%s\t%s\n' "$file" "$(cksum < "$file")";
-    else printf '%s\tMISSING\n' "$file"; fi
-  done
-}
-
-snapshot > "$RUN/before"
-file_manifest > "$RUN/files-before"
+node "$HERE/worktree-manifest.mjs" > "$RUN/files-before" || fail partial 'Cannot safely inspect the worktree before implementation'
 T=$(command -v gtimeout || command -v timeout || true)
 ARGS=(--model "$MODEL" --sandbox --mode accept-edits --print-timeout 20m --input-format stream-json --output-format stream-json)
 if [ -n "$T" ]; then
@@ -60,8 +45,7 @@ else
   agy "${ARGS[@]}" < "$RUN/input.ndjson" > "$RUN/output.ndjson" 2> "$RUN/diagnostics"
   RC=$?
 fi
-snapshot > "$RUN/after"
-file_manifest > "$RUN/files-after"
+node "$HERE/worktree-manifest.mjs" > "$RUN/files-after" || fail partial 'Cannot safely inspect the worktree after implementation'
 node "$HERE/antigravity-io.mjs" decode "$RUN/output.ndjson" "$RUN/diagnostics" "$MODEL" > "$RUN/summary" || fail partial 'Cannot validate Antigravity result'
 STATUS=$(head -n 1 "$RUN/summary")
 REASON=$(sed -n '2p' "$RUN/summary")
@@ -71,7 +55,7 @@ if [ "$RC" -eq 124 ]; then
 elif [ "$STATUS" = ready ]; then
   if [ "$RC" -ne 0 ]; then
     STATUS=partial; REASON="Antigravity exited $RC despite its success event"
-  elif cmp -s "$RUN/before" "$RUN/after"; then
+  elif cmp -s "$RUN/files-before" "$RUN/files-after"; then
     STATUS=refused; REASON='No reviewable diff in tracked or non-ignored files; ignored-only edits require architect inspection'
   # Caller-approved argv only: never evaluate a shell string from the spec/model.
   elif "${VERIFY[@]}" > "$RUN/verification" 2>&1; then

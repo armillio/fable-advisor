@@ -1,6 +1,6 @@
 # Fable Advisor evals
 
-The harness checks **this plugin's orchestration behavior**, not general coding ability. It requires Node.js ≥ 18, Bash, Git, and standard Unix utilities (including `sed`, `grep`, `diff`, `cmp`, `cksum`, and `mktemp`). There are no npm package dependencies. Model-driven checks additionally require the provider CLIs being exercised.
+The harness checks **this plugin's orchestration behavior**, not general coding ability. It requires Node.js ≥ 18, Bash, Git, and standard Unix utilities (including `sed`, `grep`, `diff`, `cmp`, `mkfifo`, and `mktemp`). There are no npm package dependencies. Model-driven checks additionally require the provider CLIs being exercised.
 
 - `npm run eval:static` — fast deterministic validation: manifests/frontmatter, four-lane catalog, no-fallback and reviewer invariants, version-1 resolution, plus Antigravity account-runner tests in disposable Git fixtures with isolated PATH/shims. Does not invoke a model or alter real Claude/Codex/Antigravity configuration.
 - `npm run eval:behavior` — **opt-in and token-consuming** Claude Code decision checks. Requires `claude auth status` to show a login. Loads this checkout using the installed CLI's `--plugin-dir`, uses `--print --output-format json --json-schema` and plan permission mode, and asks for routing/escalation/verification/review decisions **without implementation**. It grades enum fields and event ordering, never exact prose. A missing login exits 2 as UNTESTED, not PASS.

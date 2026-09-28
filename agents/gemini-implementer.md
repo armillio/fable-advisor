@@ -65,6 +65,8 @@ The runner verifies the model in the init event, requires exactly one successful
 
 Diff evidence covers tracked files and non-ignored untracked files only. Ignored secrets, dependencies, and build artifacts are deliberately excluded; an ignored-only change cannot establish completion. If the requested deliverable is ignored, stop for architect review of that specific path rather than scanning all ignored files or claiming an empty repository-wide change. No ignore rules or tracking state are changed automatically.
 
+The worktree manifest fingerprints symlink target text, never target contents. Regular files are opened without following leaf symlinks and checked before reading. Enumerated special files (such as tracked paths replaced by FIFOs), tracked directories/submodules, unreadable paths, and symlinked parent directories require manual inspection and produce `partial`, not an incomplete success report. Git does not enumerate new untracked FIFOs, so these are outside reviewable diff evidence. Run without concurrent filesystem writers; the manifest is change evidence, not a filesystem sandbox.
+
 Read the actual changed files yourself and surface deviations or judgment calls. Copy the exact model ID from the runner's `LANE` field into the report; do not substitute the catalog default. Return:
 
 ```text
