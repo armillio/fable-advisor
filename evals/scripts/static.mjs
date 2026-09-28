@@ -133,6 +133,8 @@ check('setup refuses legacy broad slug without overwriting', () => { const targe
 
 check('agent delegates configured model instead of hardcoding the default', () => {
   assert(!/FABLE_GEMINI_MODEL="gemini-3\.8-flash-medium"/.test(read('agents/gemini-implementer.md')), 'hardcoded agent override');
+  const template=read('agents/gemini-implementer.md').split('GEMINI REPORT')[1];
+  assert(template.includes('<exact resolved model ID from runner>') && !template.includes('gemini-3.8-flash-medium'),'hardcoded report model');
   const custom='gemini-3.8-flash-high';
   const r=fixture('configured',undefined,{config:{version:2,broad:{provider:'google',model:custom}},expectedModel:custom});
   assert(r.status===0 && r.stdout.includes(`(${custom})`),r.stdout+r.stderr);

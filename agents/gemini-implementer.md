@@ -65,11 +65,11 @@ The runner verifies the model in the init event, requires exactly one successful
 
 Diff evidence covers tracked files and non-ignored untracked files only. Ignored secrets, dependencies, and build artifacts are deliberately excluded; an ignored-only change cannot establish completion. If the requested deliverable is ignored, stop for architect review of that specific path rather than scanning all ignored files or claiming an empty repository-wide change. No ignore rules or tracking state are changed automatically.
 
-Read the actual changed files yourself and surface deviations or judgment calls. Return:
+Read the actual changed files yourself and surface deviations or judgment calls. Copy the exact model ID from the runner's `LANE` field into the report; do not substitute the catalog default. Return:
 
 ```text
 GEMINI REPORT
-LANE: gemini-implementer · Gemini 3.8 Flash (gemini-3.8-flash-medium) · Antigravity CLI
+LANE: gemini-implementer · <exact resolved model ID from runner> · Antigravity CLI
 STATUS: complete | partial | timeout | unavailable | refused | blocked
 OBJECTIVE: ...
 CHANGES: actual diff summary by file
