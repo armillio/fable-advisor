@@ -92,7 +92,7 @@ if [ -n "$CHANGES_MANIFEST" ]; then
 else
   printf 'Unavailable: final worktree inspection failed\n'
 fi
-printf 'VERIFIED: '; printf '%q ' "${VERIFY[@]}"; printf '\n%s\n' "$VERIFICATION"
+printf 'VERIFIED: approved verifier argv withheld; %s\n' "$VERIFICATION"
 [ ! -f "$RUN/verification" ] || tail -n 30 "$RUN/verification"
 printf 'GEMINI SAID:\n'; sed '1,2d' "$RUN/summary" | tail -n 30
 printf 'DIAGNOSTICS:\n'; tail -n 15 "$RUN/diagnostics"

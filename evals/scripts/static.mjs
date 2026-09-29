@@ -110,7 +110,7 @@ for (const [mode,expected,verify] of [
   ['legacy','unavailable'],['api-env','unavailable'],['api-settings','unavailable'],['unsafe-settings','blocked'],['soft-denial','blocked'],['wrong-model','unavailable'],['event-timeout','timeout'],['malformed','partial'],['error-event','partial'],
   ['timeout','timeout'],['verifyfail','partial',['false']],['success','complete']
 ]) {
-  check(`Gemini ${mode} → ${expected}`, () => { const r=fixture(mode,verify); assert(r.stdout.includes(`STATUS: ${expected}`), `observed ${r.stdout}\n${r.stderr}`); assert(!existsSync(join(r.dir,'fallback.txt')), 'old client fallback invoked'); if (expected !== 'complete') assert(r.status !== 0, 'non-complete exit 0'); if (mode==='missing') assert(!existsSync(join(r.dir,'output.txt')), 'fallback wrote file'); if (mode==='success') assert(r.stdout.includes('CHANGES:\noutput.txt') && r.stdout.includes('VERIFIED: test -f output.txt'), 'missing diff or evidence'); });
+  check(`Gemini ${mode} → ${expected}`, () => { const r=fixture(mode,verify); assert(r.stdout.includes(`STATUS: ${expected}`), `observed ${r.stdout}\n${r.stderr}`); assert(!existsSync(join(r.dir,'fallback.txt')), 'old client fallback invoked'); if (expected !== 'complete') assert(r.status !== 0, 'non-complete exit 0'); if (mode==='missing') assert(!existsSync(join(r.dir,'output.txt')), 'fallback wrote file'); if (mode==='success') assert(r.stdout.includes('CHANGES:\noutput.txt') && r.stdout.includes('VERIFIED: approved verifier argv withheld; independently executed; exit 0'), 'missing diff or evidence'); });
 }
 check('scanner streams Git path lists larger than 1 MiB and rejects incomplete results', () => {
   const dir=join(temp,'scan-large'); mkdirSync(dir);
@@ -278,6 +278,12 @@ check('runner reports redact GitHub credentials in every output channel', () => 
   const early=fixture('version-secret',undefined,{secret});
   assert(early.status!==0 && early.stdout.includes('STATUS: unavailable') && early.stdout.includes('<REDACTED>'),'early failure not reported');
   for(const token of tokens) assert(![r.stdout,r.stderr,early.stdout,early.stderr].some(text=>text.includes(token)),'credential leaked');
+});
+check('opaque verifier arguments never appear in reports', () => {
+  const secret='opaque-sensitive-value-77440011';
+  const r=fixture('opaque-argv',['test',secret,'=',secret]);
+  assert(r.status===0 && r.stdout.includes('VERIFIED: approved verifier argv withheld; independently executed; exit 0'),r.stdout+r.stderr);
+  assert(!r.stdout.includes(secret) && !r.stderr.includes(secret),'verifier argument leaked');
 });
 check('verification arguments never undergo shell evaluation', () => {
   const literal='$(touch injected.txt); touch another.txt';

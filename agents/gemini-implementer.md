@@ -61,6 +61,8 @@ The verifier exit-code contract reserves `126` for execution denial (including t
 
 After every verification attempt, the runner inspects the worktree again and reports the final changes. If verification modifies reviewable files (including deleting or reverting the implementation), even exit 0 is `partial`: return to the architect for inspection and re-verification, never retry automatically. A failed final scan cannot produce `complete` or stale diff evidence. A verification denial remains `blocked` even if it also changes files or leaves an unscannable path.
 
+The runner never prints verifier arguments: they may contain credentials that pattern-based redaction cannot recognize. Report only that the approved verifier ran, its exit status, and sanitized output evidence; do not reconstruct or echo the command from a spec or log.
+
 The runner resolves `broad.model` from the user's configuration by default. Only set `FABLE_GEMINI_MODEL` for an explicit architect-approved per-task override, using that exact model ID, not the example default. A saved legacy slug therefore reaches preflight and is rejected instead of silently remapped.
 
 The runner verifies the model in the init event, requires exactly one successful terminal result, compares before/after working-tree changes, and independently runs the supplied verification command. It uses the CLI's 20-minute timeout plus an external timeout when available. Unique temporary files are cleaned on exit. An empty diff is `refused`; a failed test or invalid event stream is `partial`; a timeout is `timeout`; auth/model errors are `unavailable`; a denied operation is `blocked`. No such result can become `complete` because the model claims success.
@@ -77,7 +79,7 @@ LANE: gemini-implementer · <exact resolved model ID from runner> · Antigravity
 STATUS: complete | partial | timeout | unavailable | refused | blocked
 OBJECTIVE: ...
 CHANGES: actual diff summary by file
-VERIFIED: independently executed command, exit status, and output evidence
+VERIFIED: approved verifier argv withheld, exit status, and output evidence
 GEMINI SAID: final response, noting disagreements with the diff
 JUDGMENT CALLS: decisions not specified by the architect, or none
 GAPS: ambiguities, unfinished work, or none
