@@ -376,6 +376,20 @@ check('custom Codex models require explicit effort without changing config', () 
   const value=JSON.parse(r.stdout);
   assert(r.status===0 && value.routine.effort==='medium' && value.complex.effort==='max','known model defaults lost');
 });
+check('effort-only choices are checked against their recommended model', () => {
+  const target=join(temp,'effort-only.json');
+  for(const [lane,invalid,valid] of [['routine','ultra','low'],['complex','unsupported-effort','high']]) {
+    const original=JSON.stringify({version:2,[lane]:{effort:invalid}});
+    writeFileSync(target,original);
+    const resolved=run(process.execPath,[join(root,'scripts/resolve-lanes.mjs'),target]);
+    const saved=run(process.execPath,[join(root,'scripts/save-lanes.mjs'),join(temp,'choices.json'),target]);
+    assert(resolved.status!==0 && saved.status!==0 && resolved.stderr.includes(`Unsupported ${lane} effort`) && saved.stderr.includes(`Unsupported ${lane} effort`),'unsupported default pairing accepted');
+    assert(readFileSync(target,'utf8')===original && !existsSync(target+'.lock'),'invalid setting changed configuration');
+    writeFileSync(target,JSON.stringify({version:2,[lane]:{effort:valid}}));
+    const accepted=run(process.execPath,[join(root,'scripts/resolve-lanes.mjs'),target]);
+    assert(accepted.status===0 && JSON.parse(accepted.stdout)[lane].model===catalog[lane].recommended && JSON.parse(accepted.stdout)[lane].effort===valid,accepted.stderr);
+  }
+});
 check('known cross-provider models are rejected even with matching provider and effort', () => {
   for(const [name,lane] of Object.entries(catalog)) {
     for(const source of Object.values(catalog)) for(const model of source.options) {
