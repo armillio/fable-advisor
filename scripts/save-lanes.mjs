@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Atomically merge confirmed lane choices; never silently reset existing keys.
-import { readFileSync, existsSync, lstatSync, mkdirSync, rmdirSync, writeFileSync, renameSync, copyFileSync, unlinkSync, chmodSync, constants } from 'node:fs';
+import { readFileSync, lstatSync, fstatSync, openSync, closeSync, mkdirSync, rmdirSync, writeFileSync, renameSync, unlinkSync, constants } from 'node:fs';
 import { homedir, hostname } from 'node:os';
 import { setImmediate } from 'node:timers/promises';
 import { join, dirname } from 'node:path';
@@ -33,12 +33,19 @@ function cleanup() {
     }
   }
 }
-function checkTarget() {
+function readTarget() {
   let stat;
   try { stat=lstatSync(target); }
-  catch (error) { if (error.code==='ENOENT') return; throw error; }
+  catch (error) { if (error.code==='ENOENT') return null; throw error; }
   if (stat.isSymbolicLink()) throw new Error('Symlinked lane configuration is not supported; explicitly select its real file as the setup target. No link was replaced.');
   if (!stat.isFile()) throw new Error('Lane configuration target must be a regular file');
+  if (constants.O_NOFOLLOW===undefined || constants.O_NONBLOCK===undefined) throw new Error('Safe file-open flags unavailable');
+  const fd=openSync(target,constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK);
+  try {
+    const opened=fstatSync(fd);
+    if (!opened.isFile() || opened.dev!==stat.dev || opened.ino!==stat.ino) throw new Error('Lane configuration changed during setup');
+    return {raw:readFileSync(fd),dev:opened.dev,ino:opened.ino};
+  } finally { closeSync(fd); }
 }
 // Synchronous filesystem operations finish before JS signal handlers run.
 // Exit cleanup only removes this process's lock, never a competing writer's.
@@ -56,8 +63,8 @@ try {
   writeFileSync(owner,JSON.stringify({pid:process.pid,hostname:hostname(),started_at:new Date().toISOString(),temp})+'\n',{mode:0o600,flag:'wx'});
   // Give pending termination signals a chance to stop before reading/writing config.
   await setImmediate();
-  checkTarget();
-  const current=existsSync(target)?JSON.parse(readFileSync(target,'utf8')):{};
+  const previous=readTarget();
+  const current=previous?JSON.parse(previous.raw.toString('utf8')):{};
   validateLanes(current,catalog);
   const next={...current,version:2};
   for (const [name,lane] of Object.entries(catalog)) {
@@ -71,12 +78,15 @@ try {
     if (name==='routine'||name==='complex') next[name].effort=choice.effort;
     // Broad/reviewer effort is not used by this plugin; preserve stored metadata.
   }
-  const backup=existsSync(target)?`${target}.backup-${Date.now()}-${process.pid}`:null;
+  const backup=previous?`${target}.backup-${Date.now()}-${process.pid}`:null;
   writeFileSync(temp,JSON.stringify(next,null,2)+'\n',{mode:0o600,flag:'wx'});
   JSON.parse(readFileSync(temp,'utf8'));
-  if (backup) { copyFileSync(target,backup,constants.COPYFILE_EXCL); chmodSync(backup,0o600); }
+  if (backup) writeFileSync(backup,previous.raw,{mode:0o600,flag:'wx'});
   await setImmediate();
-  checkTarget();
+  const final=readTarget();
+  if (Boolean(final)!==Boolean(previous) || (final && (final.dev!==previous.dev || final.ino!==previous.ino || !final.raw.equals(previous.raw)))) {
+    throw new Error('Lane configuration changed during setup; reread and reconfirm choices before retrying');
+  }
   renameSync(temp,target);
   console.log(JSON.stringify({target,backup,version:2}));
 } finally {

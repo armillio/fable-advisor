@@ -490,12 +490,17 @@ check('setup refuses live and dangling symlink targets without replacing links o
 check('setup rechecks a target swapped to a symlink before publishing', () => {
   const dir=join(temp,'symlink-config-swap'); mkdirSync(dir);
   const target=join(dir,'lanes.json'), destination=join(dir,'actual.json'), hook=join(dir,'swap.cjs');
-  writeFileSync(target,'{"version":1}'); writeFileSync(destination,'{"note":"untouched"}');
-  writeFileSync(hook,`const fs=require('node:fs');const copy=fs.copyFileSync;
-fs.copyFileSync=function(...args){const result=copy.apply(this,args);fs.unlinkSync(${JSON.stringify(target)});fs.symlinkSync('actual.json',${JSON.stringify(target)});return result;};require('node:module').syncBuiltinESMExports();`);
+  const original='{"version":1}';
+  writeFileSync(target,original); writeFileSync(destination,'{"note":"secret destination"}');
+  writeFileSync(hook,`const fs=require('node:fs');const write=fs.writeFileSync;
+fs.writeFileSync=function(path,...args){const result=write.call(this,path,...args);
+if(String(path).endsWith('.tmp')){fs.unlinkSync(${JSON.stringify(target)});fs.symlinkSync('actual.json',${JSON.stringify(target)});}
+return result;};require('node:module').syncBuiltinESMExports();`);
   const r=run(process.execPath,['--require',hook,join(root,'scripts/save-lanes.mjs'),join(temp,'choices.json'),target]);
   assert(r.status!==0 && r.stderr.includes('Symlinked lane configuration'),r.stdout+r.stderr);
-  assert(lstatSync(target).isSymbolicLink() && readFileSync(destination,'utf8')==='{"note":"untouched"}','swapped link or destination overwritten');
+  assert(lstatSync(target).isSymbolicLink() && readFileSync(destination,'utf8')==='{"note":"secret destination"}','swapped link or destination overwritten');
+  const backup=readdirSync(dir).find(name=>name.includes('.backup-'));
+  assert(backup && readFileSync(join(dir,backup),'utf8')===original,'backup read through swapped symlink');
   assert(!existsSync(target+'.lock') && !readdirSync(dir).some(name=>name.endsWith('.tmp')),'swap failure leaked lock/temp');
 });
 check('uncatchable setup termination preserves a diagnosable lock for manual recovery', () => {
