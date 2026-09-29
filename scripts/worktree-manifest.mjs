@@ -3,18 +3,31 @@
 import { spawn } from 'node:child_process';
 import { lstatSync, readlinkSync, openSync, fstatSync, readSync, closeSync, constants } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { isAbsolute, join } from 'node:path';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
+function displayPath(path) {
+  const decoded=path.toString('utf8');
+  if (Buffer.from(decoded).equals(path)) return JSON.stringify(decoded).slice(1,-1);
+  // Invalid UTF-8 must remain byte-distinct from a real replacement character.
+  return [...path].map(byte=>`\\x${byte.toString(16).padStart(2,'0')}`).join('');
+}
 function fingerprint(path) {
-  const parts=path.split('/');
-  if (isAbsolute(path) || parts.some(part=>!part || part==='.' || part==='..')) throw new Error('Invalid Git path');
+  const parts=[];
+  for (let start=0;start<=path.length;) {
+    const slash=path.indexOf(47,start);
+    if (slash<0) { parts.push(path.subarray(start)); break; }
+    parts.push(path.subarray(start,slash)); start=slash+1;
+  }
+  if (path[0]===47 || parts.some(part=>!part.length || part.equals(Buffer.from('.')) || part.equals(Buffer.from('..')))) throw new Error('Invalid Git path');
   // Tracked descendants can remain in the index after a directory becomes a link.
+  let prefixLength=0;
   for (let i=1;i<parts.length;i++) {
+    prefixLength+=parts[i-1].length;
     let parent;
-    try { parent=lstatSync(join(...parts.slice(0,i))); }
+    try { parent=lstatSync(path.subarray(0,prefixLength)); }
     catch(error) { if(error.code==='ENOENT') return 'MISSING'; throw error; }
     if (!parent.isDirectory() || parent.isSymbolicLink()) throw new Error('Unsupported parent path');
+    prefixLength++;
   }
   let stat;
   try { stat=lstatSync(path); }
@@ -48,21 +61,24 @@ async function worktreePaths() {
     git.once('error',()=>resolve(false));
     git.once('close',code=>resolve(code===0));
   });
-  git.stdout.setEncoding('utf8');
-  const paths=new Set();
-  let pending='';
+  const paths=new Map();
+  let pending=Buffer.alloc(0);
   for await (const chunk of git.stdout) {
-    const parts=(pending+chunk).split('\0');
-    pending=parts.pop();
-    for (const path of parts) if(path) paths.add(path);
+    let start=0, end;
+    while ((end=chunk.indexOf(0,start))!==-1) {
+      const path=Buffer.concat([pending,chunk.subarray(start,end)]);
+      if(path.length) paths.set(path.toString('hex'),path);
+      pending=Buffer.alloc(0); start=end+1;
+    }
+    if(start<chunk.length) pending=Buffer.concat([pending,chunk.subarray(start)]);
   }
-  if(!await finished || pending) throw new Error('Incomplete Git path list');
-  return [...paths].sort();
+  if(!await finished || pending.length) throw new Error('Incomplete Git path list');
+  return [...paths.values()].sort(Buffer.compare);
 }
 
 try {
   const paths=await worktreePaths();
-  const rows=paths.map(path=>`${JSON.stringify(path).slice(1,-1)}\t${fingerprint(path)}`);
+  const rows=paths.map(path=>`${displayPath(path)}\t${fingerprint(path)}`);
   process.stdout.write(rows.join('\n')+'\n');
 } catch {
   // Do not expose arbitrary path/error data, or treat an incomplete scan as evidence.

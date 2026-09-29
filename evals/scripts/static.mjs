@@ -133,6 +133,29 @@ check('scanner streams Git path lists larger than 1 MiB and rejects incomplete r
   const missing=run(process.execPath,[join(root,'scripts/worktree-manifest.mjs')],{cwd:dir,env:{...process.env,PATH:shim},timeout:3000});
   assert(missing.status===1 && !missing.stdout && missing.stderr.includes('Cannot safely fingerprint'),'spawn error not handled');
 });
+check('scanner keeps invalid UTF-8 paths byte-distinct from replacement characters', () => {
+  const dir=join(temp,'scan-raw-bytes'); mkdirSync(dir);
+  const shim=join(temp,'raw-git-shim'); mkdirSync(shim);
+  const raw=Buffer.from([98,97,100,45,255]);
+  // Some host filesystems reject these names; proxy only the filesystem calls.
+  writeFileSync(join(dir,'raw-proxy'),'raw bytes');
+  writeFileSync(join(dir,'replacement-proxy'),'replacement character');
+  const hook=join(temp,'raw-path-hook.cjs');
+  writeFileSync(hook,`const fs=require('node:fs');
+for(const method of ['lstatSync','openSync']){const original=fs[method];fs[method]=function(path,...args){
+if(Buffer.isBuffer(path)&&path.equals(Buffer.from([98,97,100,45,255])))path='raw-proxy';
+else if(Buffer.isBuffer(path)&&path.equals(Buffer.from('bad-�')))path='replacement-proxy';
+return original.call(this,path,...args);};}
+require('node:module').syncBuiltinESMExports();`);
+  const input=join(temp,'raw-paths');
+  writeFileSync(input,Buffer.concat([raw,Buffer.from([0]),Buffer.from('bad-�\0')]));
+  const git=join(shim,'git'); writeFileSync(git,`#!/bin/sh\ncat '${input}'\n`); chmodSync(git,0o755);
+  const args=['--require',hook,join(root,'scripts/worktree-manifest.mjs')];
+  const r=run(process.execPath,args,{cwd:dir,env:{...process.env,PATH:shim+':'+basePath},timeout:3000});
+  assert(r.status===0,r.stdout+r.stderr);
+  const rows=r.stdout.trim().split('\n');
+  assert(rows.length===2 && rows.some(row=>row.startsWith('\\x62\\x61\\x64\\x2d\\xff\tFILE:')) && rows.some(row=>row.startsWith('bad-�\tFILE:')),'raw path was replaced or collided');
+});
 check('scanner fingerprints symlink identity without reading targets', () => {
   const dir=join(temp,'scan-links'); mkdirSync(dir); run('git',['init','-q',dir]);
   const outside=join(temp,'external-file'), fifo=join(temp,'external-fifo');
@@ -178,7 +201,7 @@ for(const kind of ['symlink','fifo']) check(`scanner rejects a leaf swapped to $
   writeFileSync(join(dir,'swap.txt'),'regular');
   const hook=join(temp,`swap-${kind}.cjs`);
   writeFileSync(hook,`const fs=require('node:fs'), cp=require('node:child_process'); const open=fs.openSync;
-fs.openSync=function(path,...args){if(path==='swap.txt'){fs.unlinkSync(path);
+fs.openSync=function(path,...args){if((Buffer.isBuffer(path)?path.toString('utf8'):path)==='swap.txt'){fs.unlinkSync(path);
 if(${JSON.stringify(kind)}==='symlink')fs.symlinkSync(${JSON.stringify(join(temp,'external-file'))},path);else cp.execFileSync('mkfifo',[path]);}
 return open.call(this,path,...args);};require('node:module').syncBuiltinESMExports();`);
   const r=run(process.execPath,['--require',hook,join(root,'scripts/worktree-manifest.mjs')],{cwd:dir,timeout:3000,killSignal:'SIGKILL'});
