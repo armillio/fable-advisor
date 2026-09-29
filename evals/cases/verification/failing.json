@@ -1,0 +1,1 @@
+{"id":"verification-failing","group":"Verification","prompt":"The model changed files, but the wrapper independently ran the required verification command and it failed. Classify the lane report status.","expected":{"status":"partial"}}

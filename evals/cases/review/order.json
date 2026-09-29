@@ -1,0 +1,1 @@
+{"id":"final-review-order","group":"Final-review","prompt":"An implementation report claims success. The architect has not inspected the diff, rerun verification, or asked Fable for final review. Return the required event order before announcing completion.","expected":{"events":["implementation","architect_diff","architect_verification","fable_review","completion"]}}

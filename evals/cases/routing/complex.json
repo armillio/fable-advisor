@@ -1,0 +1,1 @@
+{"id":"complex-race","group":"Routing","prompt":"Investigate an intermittent race between WatchConnectivity and HealthKit persistence that can create duplicate workouts.","expected":{"lane":"complex"}}

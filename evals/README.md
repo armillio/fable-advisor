@@ -1,0 +1,17 @@
+# Fable Advisor evals
+
+The harness checks **this plugin's orchestration behavior**, not general coding ability. It requires Node.js ≥ 18, Bash, Git, and standard Unix utilities (including `sed`, `grep`, `diff`, `cmp`, `mkfifo`, and `mktemp`). There are no npm package dependencies. Model-driven checks additionally require the provider CLIs being exercised.
+
+- `npm run eval:static` — fast deterministic validation: manifests/frontmatter, four-lane catalog, no-fallback and reviewer invariants, version-1 resolution, plus Antigravity account-runner tests in disposable Git fixtures with isolated PATH/shims. Does not invoke a model or alter real Claude/Codex/Antigravity configuration.
+- `npm run eval:behavior` — **opt-in and token-consuming** Claude Code decision checks. Requires `claude auth status` to show a login. Loads this checkout using the installed CLI's `--plugin-dir`, uses `--print --output-format json --json-schema` and plan permission mode, and asks for routing/escalation/verification/review decisions **without implementation**. It grades enum fields and event ordering, never exact prose. A missing login exits 2 as UNTESTED, not PASS.
+- `npm run eval:all` — both tiers; do not put this on every install/update. Normal CI should run `eval:static`; behavioral runs belong in a dedicated, explicitly authorized workflow.
+
+Set `FABLE_EVAL_REPEATS=2` or `3` for bounded repeated runs. Only integers 1–3 are accepted; invalid values fail before authentication/model calls. The authentication probe has a 10-second deadline; a timeout exits 2 as UNTESTED before cases or transcripts are created. Every run is reported separately; there is no hidden majority-vote pass. Each case is capped at 3 minutes and $0.25.
+
+Only bounded decision enums, pass/fail metadata, and whether stderr was present are saved or printed; raw stderr and free-form model prose are not retained. Remaining strings are recursively redacted for known credential patterns (including GitLab and Slack tokens) and local home/plugin/temp paths. Records live in an OS temporary directory; their locations are printed for inspection. Redaction is still best-effort. Do not commit generated records.
+
+Each case records `execution_status` separately from the model's decision: a process timeout is `timeout`, with its error code and signal retained, and always fails evaluation even if the partial decision matches the scenario. The console labels these timeouts explicitly.
+
+Static tests never rename/delete a real provider binary. Temporary shims exercise unavailable/auth/blocked/timeout/empty-diff/failing-verification/success outcomes, exit-0 soft denials, model mismatches, malformed events, API-key-mode refusal, and legacy-slug refusal. Regression tests cover configured models, literal verifier arguments, malformed config, concurrent setup writes, output redaction, and invalid repeat counts. The Codex missing-binary check uses an empty executable search path.
+
+**Limitations:** Claude decision evals test the loaded doctrine and machine-readable decisions, not an end-to-end implementation/review event trace. The Gemini smoke test against the real model is separate and costs tokens; run it only in a disposable repository with a harmless file task, then inspect the diff and verification output. Provider/model access may differ across machines. If a case is flaky, keep failed run records and tighten the scenario/schema rather than relabeling it a pass.

@@ -1,0 +1,1 @@
+{"id":"verification-empty-diff","group":"Verification","prompt":"An implementer exits 0 and says it finished, but the actual implementation diff is empty. Classify the lane report status.","expected":{"status":"refused"}}

@@ -1,0 +1,1 @@
+{"id":"architecture-sync","group":"Routing","prompt":"Choose a new persistence architecture for offline synchronization across multiple clients.","expected":{"lane":"architect"}}

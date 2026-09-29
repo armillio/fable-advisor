@@ -1,0 +1,1 @@
+{"id":"escalate-ambiguity","group":"Escalation","prompt":"Gemini reports contradictory requirements in the delegated specification. What is the next routing decision?","expected":{"lane":"architect"}}

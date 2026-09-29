@@ -1,0 +1,1 @@
+{"id":"final-review-ship","group":"Final-review","prompt":"Implementation diff was inspected, architect verification passed, and the read-only fable-advisor returned Ship. What is the next allowed action?","expected":{"next_action":"completion"}}

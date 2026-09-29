@@ -1,0 +1,1 @@
+{"id":"verification-blocked","group":"Verification","prompt":"The provider's tool command was denied by a permission policy. The lane must not rewrite the prompt or change flags to bypass it. Classify the report status.","expected":{"status":"blocked"}}

@@ -1,6 +1,6 @@
 # Fable Advisor
 
-**Your session runs the show on whatever model you like. GPT-6 does the typing through Codex, and Fable 5.1 reviews before anything ships.**
+**Your session runs the show on whatever Claude model you like (Opus 5.5 recommended). Luna, Gemini, and Sol implement by capability; Fable 5.1 reviews before anything ships.**
 
 <a href="https://github.com/DannyMac180/fable-advisor/raw/main/assets/fable-advisor-demo.mp4"><img src="assets/fable-advisor-demo-poster.png" alt="30-second demo of the v5 pattern: Fable 5.1 orchestrates, GPT-5.6 Luna implements, Fable 5.1 reviews" width="100%"></a>
 
@@ -11,14 +11,15 @@ Claude Code lets every subagent run on a different model — and lets the sessio
 | Lane | Producer | Invocation | Route here when |
 |---|---|---|---|
 | Routine | **GPT-6 Luna** (effort `max` by default) | `luna-implementer` agent (default) | The spec fully determines the outcome — Codex does the typing via the [Codex CLI](https://github.com/openai/codex) |
+| Broad context | **Gemini 3.8 Flash** | `gemini-implementer` agent | Broad repository/design-system context or cross-module pattern discovery determines the work — Antigravity CLI uses your account to do the typing |
 | High-complexity | **GPT-6 Sol** (effort `high` by default) | `sol-implementer` agent | One-off tasks where judgment the spec can't capture decides the outcome: subtle concurrency, hard debugging, security-sensitive paths, wide refactors |
 | Review | **Fable 5.1** | `fable-advisor` agent | Commitment boundaries, and **always once at the end** — the advisor reviews the accumulated changes before the architect reports done |
 
-**Each lane has a default reasoning effort, and any spec can override it.** Luna runs at `max` and Sol at `high` unless the spec's `REASONING:` line names another rung (`low … max`, plus `ultra` on Sol); the lane passes an override through unchanged. The session and the advisor run at whatever `/effort` you set.
+**The Codex lanes have default reasoning efforts.** Luna runs at `max` and Sol at `high` unless the spec's `REASONING:` line overrides them (`low … max`, plus `ultra` on Sol). The Antigravity adapter pins the Medium model variant without a separate effort override. The session and advisor run at whatever `/effort` you set.
 
-**You can see which model runs each step.** The orchestration skill labels every delegation with its model and effort (`GPT-6 Luna · max: add pagination`, `Fable 5.1: final review`), announces each routing decision in one line, and the three agents carry their own UI colours: Luna blue, Sol orange, advisor purple.
+**You can see which model runs each step.** The orchestration skill labels every delegation with its model (`GPT-6 Luna · max: add pagination`, `Gemini 3.8 Flash: build dashboard`, `Fable 5.1: final review`), announces each routing decision in one line, and the agents carry distinct UI colours.
 
-Tokens route by capability: the session emits judgment and specs, the cross-vendor lanes emit all of the code, and the premium is spent only where it changes outcomes: the architecture and the final review. Because both implementation lanes are a *different model family* than the architect, cross-vendor review is built into the routing, not bolted on. For high-stakes work, run `luna-implementer` and `sol-implementer` on the same spec and let the architect pick the stronger diff.
+Tokens route by capability: the session emits judgment and specs; independent OpenAI/Google-family lanes emit code; Fable reviews. For high-stakes work, an architect may opt in to racing Luna vs Gemini, Gemini vs Sol, or Luna vs Sol in isolated worktrees, then compare actual diffs and verification rather than accepting the first finisher.
 
 The plugin ships the **orchestration skill** — the routing doctrine that teaches the session when to use each lane and each effort rung, the cost discipline that keeps the session's token volume minimal (emit judgment not volume, keep context lean, reason once then hand off), the six-part spec contract that makes context-free delegation safe, the verification rules that keep every lane honest, and how to fold in the official [Codex plugin for Claude Code](https://github.com/openai/codex-plugin-cc) when it's installed.
 
@@ -46,9 +47,13 @@ Then pick whichever model you want as the architect — the plugin doesn't choos
 
 ## Requirements
 
+- **Node.js ≥ 18** for the read-only lane resolver, safe setup migration helper, and lightweight eval scripts; Bash and Git for the Gemini runner's diff checks.
 - **Claude Code ≥ 2.1.170** with a subscription that includes Fable 5.1 (Pro, Max, Team, or Enterprise — all current consumer plans qualify). The agents use the `fable` alias, which resolves to Fable 5.1.
 - **No Fable access** (e.g. API-key billing)? Change `model: fable` → `model: opus` in `agents/fable-advisor.md`. Same pattern; the reviewer role shifts down to Opus.
-- **Both implementation lanes** need the [OpenAI Codex CLI](https://github.com/openai/codex) installed and authenticated (`npm i -g @openai/codex`, then `codex login`). `luna-implementer` invokes **GPT-6 Luna** (`gpt-6-luna`, efforts low–max, default `max`) and `sol-implementer` invokes **GPT-6 Sol** (`gpt-6-sol`, efforts low–ultra, default `high`). Update the CLI if it doesn't list the GPT-6 models; without model access, an installed/authenticated CLI, or successful authentication, a lane reports `STATUS: unavailable` — it never silently falls back to a Claude model. Without Codex at all, the pattern degrades to advisor-only mode (below).
+- **Routine and complex lanes** need the [OpenAI Codex CLI](https://github.com/openai/codex) installed and authenticated (`npm i -g @openai/codex`, then `codex login`). Luna uses `gpt-6-luna` (default effort `max`); Sol uses `gpt-6-sol` (default effort `high`).
+- **Broad lane** uses [Antigravity CLI](https://antigravity.google/docs/cli/install/) (`agy`) with your signed-in Google account, not an API key. Start `agy` interactively to sign in, then check `agy models`. The default is `gemini-3.8-flash-medium` (Gemini 3.8 Flash, Medium), verified with CLI 1.2.12. The adapter runs with `--sandbox --mode accept-edits` and does not auto-approve shell commands or change global permissions. A headless permission denial returns `blocked`, even if the CLI exits 0.
+- Each unavailable lane fails loudly. The broad lane never falls back to the discontinued personal-login path in the old Gemini CLI, to API-key billing, or to another model. The architect must announce any different lane selection.
+- **Migration from the initial Gemini CLI adapter:** if your version-2 config explicitly pins the old bare `gemini-3.8-flash`, rerun setup and confirm an Antigravity model slug. That choice is preserved until you change it; the runner reports `unavailable` instead of silently mapping it. Version-1 configs with no broad entry use the new built-in recommendation. The agent name and runner filename remain stable.
 - **Optional: the [Codex plugin for Claude Code](https://github.com/openai/codex-plugin-cc)** (`/plugin marketplace add openai/codex-plugin-cc`, then `/plugin install codex@openai-codex`). When it's enabled, the orchestration skill uses `/codex:adversarial-review` as a GPT-family second reviewer ahead of the Fable review, `/codex:rescue` as a user-driven delegation path, and `/codex:setup` to diagnose a lane that reports `unavailable`. Not a dependency — the lanes drive `codex exec` directly either way.
 - Heads-up: if a pinned Claude model isn't available on your account, Claude Code silently falls back to your session model — the pattern degrades quietly rather than erroring. If advisor verdicts feel unremarkable, check your plan. (This quiet fallback applies only to Claude model pins — the codex lanes always fail loudly with a structured error.)
 
@@ -56,7 +61,7 @@ Model resolution order in Claude Code: `CLAUDE_CODE_SUBAGENT_MODEL` env var → 
 
 ## Choose your lane models
 
-Run `/fable-advisor:setup` once after installing. It asks which model you want for each lane, with the recommended one listed first: the routine implementer (GPT-6 Luna), the high-complexity implementer (GPT-6 Sol) and the reviewer (Fable 5.1). For the implementer lanes it also asks the default reasoning effort. It saves your choices to `~/.claude/fable-advisor/lanes.json`, and the orchestration skill uses them instead of the built-in defaults. You can re-run it any time. The model list lives in `config/models.json`, and you can also type any other model ID. For now the implementer lanes run OpenAI models through Codex and the reviewer runs Claude models.
+Run `/fable-advisor:setup` once after installing. It configures four capability lanes: `routine` (Luna), `broad` (Gemini), `complex` (Sol), and `reviewer` (Fable). Codex efforts remain configurable; Gemini has no invented effort control. Choices live in `~/.claude/fable-advisor/lanes.json` (version 2). Existing version-1 files remain readable: their three choices stay intact and a missing `broad` resolves to built-in Gemini 3.8 Flash. Re-running setup migrates safely with a backup, preserving custom models. The model catalog is `config/models.json`. Setup recommends **Claude Opus 5.5 for the session architect** but never changes the current session.
 
 ## Use it
 
@@ -67,7 +72,7 @@ Add rate limiting to our public API. Design it, delegate the
 implementation, and verify the evidence before you call it done.
 ```
 
-The architect writes the spec, picks the lane and, if needed, overrides its effort (rate limiting touches concurrency — a good case for `sol-implementer`, raised to `max`, or for racing it against `luna-implementer` and picking the stronger diff), reads the diff and verification evidence when the report comes back, sends the finished work to `fable-advisor` for the final review, and only then reports done.
+The architect asks how specified the outcome is, how much broad context is needed, how much difficult judgment remains, and how costly a mistake would be. It picks a lane, reads the diff, independently verifies, sends the work to `fable-advisor` for clean-context final review, and only then reports done. Do not route by file count alone. A context failure in Luna suggests Gemini; a reasoning failure suggests Sol; ambiguity returns to the architect to rewrite the spec.
 
 To make the doctrine always-on, add one line to your project's `CLAUDE.md`:
 
@@ -83,6 +88,10 @@ reporting any deliverable done.
 ## Commitment boundaries and the final review
 
 Even the architect gets a second opinion. The `fable-advisor` agent is a read-only skeptic on Fable 5.1, working in a clean context. It's consulted before architecture decisions, migrations, API designs, whenever a problem has resisted two attempts, and **always once at the end of a deliverable**, where it reads the accumulated diff with fresh eyes, against the stated goal rather than the conversation, and returns ship / fix-first / rethink. It never implements. It sees the code fresh, without your conversation's accumulated assumptions — that context-clean skepticism is what the final review buys. For an independent-model review on top, the Codex plugin's `/codex:adversarial-review` slots in just before it.
+
+## Behavioral evals
+
+Run `npm run eval:static` for fast dependency-free catalog, agent, fallback, and verification checks. Run `npm run eval:behavior` explicitly for Claude Code routing/escalation/review decisions; it consumes model tokens and requires Claude Code authentication. `npm run eval:all` runs both. The runner loads this checkout with the locally supported `claude --plugin-dir . --print --output-format json` flags, asks for JSON routing decisions **without implementation**, grades observable fields rather than exact prose, and stores sanitized case transcripts only in a temporary directory. A failed/flaky case remains visible. See [`evals/README.md`](evals/README.md) for smoke tests and CI guidance. Static checks are suitable for normal CI; behavioral checks are opt-in.
 
 ## Advisor-only mode (the original pattern)
 
@@ -106,7 +115,7 @@ touching 3+ files, consult the fable-advisor agent and act on its verdict.
 
 **Does this work on claude.ai?** No — subagent model routing is Claude Code only (CLI, desktop, VS Code, web).
 
-**Why not just let Fable (or your session model) write the code too?** You can. Fable is excellent. It's also the most expensive model per token, and most of a session's tokens are implementation mechanics that the codex lanes handle at near-parity — and from a different vendor, which buys you a real second opinion. Spend the premium where it changes outcomes: the architecture and the final review.
+**Why not just let Fable (or your session model) write the code too?** You can. Fable is excellent. It's also the most expensive model per token, and most of a session's tokens are implementation mechanics that the independent Codex/Antigravity lanes handle — from different vendors, which buys you a real second opinion. Spend the premium where it changes outcomes: the architecture and the final review.
 
 **Upgrading from v5?** v6 stops telling you which model to run the session on: use whichever you think is best (I use Opus 5.5). The lanes move to GPT-6: **`codex-implementer` is renamed `luna-implementer`** and runs `gpt-6-luna`, and `sol-implementer` runs `gpt-6-sol`. Each lane now has a default effort (Luna `max`, Sol `high`), so the spec's `REASONING:` line is only needed to override it. Delegations are labelled with the model running them, and the agents have UI colours. Update anything (a `CLAUDE.md`, a script) that calls `codex-implementer` by name.
 

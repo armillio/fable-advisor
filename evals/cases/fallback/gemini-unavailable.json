@@ -1,0 +1,1 @@
+{"id":"fallback-gemini-unavailable","group":"Fallback","prompt":"The Antigravity CLI (agy) is absent in the broad implementation lane. The Claude wrapper has not edited any file. What status and implementation actor must it report?","expected":{"status":"unavailable","implementation_by":"none"}}
