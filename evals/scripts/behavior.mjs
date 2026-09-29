@@ -29,6 +29,25 @@ const cases=groups.flatMap(group=>readdirSync(join(root,'evals/cases',group)).fi
 const transcriptDir=mkdtempSync(join(tmpdir(),'fable-behavior-'));
 const schema={type:'object',properties:{lane:{type:'string',enum:['routine','broad','complex','architect']},status:{type:'string',enum:['complete','partial','timeout','unavailable','refused','blocked']},implementation_by:{type:'string',enum:['none','provider']},next_action:{type:'string',enum:['fable_review','completion','architect_verification']},reason:{type:'string'},complete:{type:'boolean'},events:{type:'array',items:{type:'string'}}},additionalProperties:false};
 const expectedKeys=['lane','status','implementation_by','next_action','complete','events'];
+const allowedValues={
+  lane:new Set(['routine','broad','complex','architect']),
+  status:new Set(['complete','partial','timeout','unavailable','refused','blocked']),
+  implementation_by:new Set(['none','provider']),
+  next_action:new Set(['fable_review','completion','architect_verification'])
+};
+const allowedEvents=new Set(['implementation','architect_diff','architect_verification','fable_review','completion']);
+function safeDecision(value) {
+  if (!value || typeof value!=='object' || Array.isArray(value)) return {};
+  const safe={};
+  for(const [key,options] of Object.entries(allowedValues)) {
+    if(key in value) safe[key]=options.has(value[key])?value[key]:'<INVALID>';
+  }
+  if('complete' in value) safe.complete=typeof value.complete==='boolean'?value.complete:'<INVALID>';
+  if('events' in value) safe.events=Array.isArray(value.events)
+    ? value.events.slice(0,20).map(event=>allowedEvents.has(event)?event:'<INVALID>')
+    : '<INVALID>';
+  return safe;
+}
 const normalize=(value)=>typeof value==='string'?value.trim().toLowerCase():value;
 const rows=[];
 for (const test of cases) for (let attempt=1;attempt<=repeats;attempt++) {
@@ -41,8 +60,9 @@ for (const test of cases) for (let attempt=1;attempt<=repeats;attempt++) {
   catch { observed={parse_error:true}; }
   const pass=executionStatus==='complete' && observed !== null && typeof observed==='object' && expectedKeys.every(key=>!(key in test.expected) || JSON.stringify(normalize(observed[key]))===JSON.stringify(normalize(test.expected[key])));
   const ref=join(transcriptDir,`${test.id}-${attempt}.json`);
-  const record=sanitize({case:test.id,attempt,expected:test.expected,observed,execution_status:executionStatus,error_code:run.error?.code ?? null,signal:run.signal,exit:run.status,stderr:run.stderr ?? ''},root);
-  record.stderr=record.stderr.slice(0,3000);
+  // Persist only bounded decision enums and process metadata, never raw stderr
+  // or unbounded model prose; arbitrary credentials cannot be regex-redacted.
+  const record=sanitize({case:test.id,attempt,expected:test.expected,observed:safeDecision(observed),execution_status:executionStatus,error_code:run.error?.code ?? null,signal:run.signal,exit:run.status,stderr_present:Boolean(run.stderr)},root);
   writeFileSync(ref,JSON.stringify(record,null,2)+'\n',{mode:0o600});
   rows.push({test,attempt,pass,ref});
   console.log(`${pass?'PASS':'FAIL'} ${test.id} run ${attempt} (${executionStatus}): expected ${JSON.stringify(record.expected)}; observed ${JSON.stringify(record.observed)}; ${ref}`);

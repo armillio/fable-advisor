@@ -8,7 +8,7 @@ The harness checks **this plugin's orchestration behavior**, not general coding 
 
 Set `FABLE_EVAL_REPEATS=2` or `3` for bounded repeated runs. Only integers 1–3 are accepted; invalid values fail before authentication/model calls. The authentication probe has a 10-second deadline; a timeout exits 2 as UNTESTED before cases or transcripts are created. Every run is reported separately; there is no hidden majority-vote pass. Each case is capped at 3 minutes and $0.25.
 
-Decision content and stderr are recursively redacted for known credential patterns and local home/plugin/temp paths before being saved or printed. Transcripts live in an OS temporary directory; their locations are printed for inspection. Redaction is best-effort, not a guarantee against arbitrary sensitive model output. Do not commit generated transcripts.
+Only bounded decision enums, pass/fail metadata, and whether stderr was present are saved or printed; raw stderr and free-form model prose are not retained. Remaining strings are recursively redacted for known credential patterns (including GitLab and Slack tokens) and local home/plugin/temp paths. Records live in an OS temporary directory; their locations are printed for inspection. Redaction is still best-effort. Do not commit generated records.
 
 Each case records `execution_status` separately from the model's decision: a process timeout is `timeout`, with its error code and signal retained, and always fails evaluation even if the partial decision matches the scenario. The console labels these timeouts explicitly.
 

@@ -565,26 +565,30 @@ cp.spawnSync=(command,args,options)=>{
     assert(record.observed.status==='timeout','model decision overwritten with infrastructure status');
   }
 });
-check('behavior records and console recursively redact structured model output', () => {
+check('behavior records withhold arbitrary model output and stderr', () => {
   const dir=join(temp,'behavior-redaction'); mkdirSync(dir);
   const home=join(dir,'home'); mkdirSync(home);
   const token='sk-proj-'+ 'x'.repeat(32), bearer='fixture-credential-value';
-  const reason=`${home}/private ${root}/private ${token} Bearer ${bearer}`;
+  const gitlab='glpat-'+'g'.repeat(32), slack='xoxb-'+'1234-'.repeat(8), opaque='opaque-sensitive-value-44009977';
+  const reason=`${home}/private ${root}/private ${token} Bearer ${bearer} ${gitlab} ${slack} ${opaque}`;
   const cli=join(dir,'claude');
   writeFileSync(cli,`#!${process.execPath}\nif(process.argv.includes('auth')){console.log(JSON.stringify({loggedIn:true}));}else{console.log(JSON.stringify({structured_output:{lane:'routine',reason:${JSON.stringify(reason)},nested:[{${JSON.stringify(token)}:${JSON.stringify(reason)}}]}}));console.error(${JSON.stringify(reason)});}\n`);
   chmodSync(cli,0o755);
   const r=run(process.execPath,[join(root,'evals/scripts/behavior.mjs')],{env:{...process.env,PATH:dir,HOME:home,TMPDIR:dir,FABLE_EVAL_REPEATS:'1'},timeout:30000});
   assert(r.status===1 && r.stdout.includes('FAIL'),'raw decision grading did not run');
-  assert(!r.stdout.includes(token) && !r.stdout.includes(bearer) && !r.stdout.includes(home) && !r.stdout.includes(root),'console leaked model output');
+  for(const secret of [token,bearer,gitlab,slack,opaque,home,root]) assert(!r.stdout.includes(secret),'console leaked model output');
   const records=join(dir,readdirSync(dir).find(name=>name.startsWith('fable-behavior-')));
   const files=readdirSync(records); assert(files.length===18,'expected all 18 behavioral cases');
   for(const name of files) {
     const raw=readFileSync(join(records,name),'utf8'); JSON.parse(raw);
-    assert(!raw.includes(token) && !raw.includes(bearer) && !raw.includes(home) && !raw.includes(root),'transcript leaked model output');
-    assert(raw.includes('<REDACTED>') && raw.includes('<HOME>') && raw.includes('<PLUGIN>'),'missing recursive redaction');
+    for(const secret of [token,bearer,gitlab,slack,opaque,home,root]) assert(!raw.includes(secret),'transcript leaked model output');
+    const record=JSON.parse(raw);
+    assert(record.stderr_present===true && !('stderr' in record) && !('reason' in record.observed) && !('nested' in record.observed),'free-form model output persisted');
+    assert(record.observed.lane==='routine','bounded decision was discarded');
   }
-  const value=sanitize({reason:[reason]},root);
-  assert(value.reason[0].includes('<REDACTED>'),'nested sanitizer regression');
+  const value=sanitize({reason:[reason], [gitlab]:slack},root);
+  for(const secret of [token,bearer,gitlab,slack,home,root]) assert(!JSON.stringify(value).includes(secret),'nested sanitizer regression');
+  assert(value.reason[0].includes('<REDACTED>') && '<REDACTED>' in value,'known token formats were not redacted');
 });
 
 rmSync(temp,{recursive:true,force:true});
