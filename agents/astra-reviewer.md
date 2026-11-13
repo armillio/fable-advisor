@@ -41,10 +41,10 @@ Resolve the diff range. If `git -C "$REPO" rev-parse --verify --quiet '<BASE>^{c
 Run the two blocks below in **one** Bash call (shell variables do not survive between calls), with the Bash tool's `timeout` set to `600000`, It prints codex's final message at the end. Pick a fresh heredoc delimiter for every run: `SPEC_EOF_` followed by 12 random hex characters, on both the opening and the closing line. Confirm no line of the text you paste equals it. A fixed delimiter would let a line in the pasted text close the heredoc early and run the rest as shell commands. Write the prompt to a unique temp file (parallel runs must not share paths):
 
 ```bash
-SPEC=$(mktemp "${TMPDIR:-/tmp}/astra-spec.XXXXXX")
-FINAL=$(mktemp "${TMPDIR:-/tmp}/astra-final.XXXXXX")
+SPEC=$(mktemp "${TMPDIR:-/tmp}/astra-spec.XXXXXX") || { echo 'STATUS: failed — could not write the spec file'; exit 1; }
+FINAL=$(mktemp "${TMPDIR:-/tmp}/astra-final.XXXXXX") || { echo 'STATUS: failed — could not write the spec file'; exit 1; }
 
-cat > "$SPEC" << 'SPEC_EOF_<12 random hex>'
+cat > "$SPEC" << 'SPEC_EOF_<12 random hex>' || { echo 'STATUS: failed — could not write the spec file'; exit 1; }
 Scope of this run: one read-only code review of a branch, requested by an
 orchestrating session before it opens a pull request. Do the review directly in
 this run. I explicitly opt out of starting an orchestration or delegation

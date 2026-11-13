@@ -41,10 +41,10 @@ The prompt you receive should contain the standard six-part spec: **objective, f
 1. Write the spec to a unique prompt file — never inline shell quoting, never a fixed path (parallel lanes on fixed paths corrupt each other). Run steps 1 and 2 in one Bash call: shell variables don't survive between calls. Pick a fresh heredoc delimiter for every run: `SPEC_EOF_` followed by 12 random hex characters, on both the opening and the closing line. Confirm no line of the text you paste equals it. A fixed delimiter would let a line in the pasted text close the heredoc early and run the rest as shell commands.
 
 ```bash
-SPEC=$(mktemp "${TMPDIR:-/tmp}/codex-spec.XXXXXX")
-FINAL=$(mktemp "${TMPDIR:-/tmp}/codex-final.XXXXXX")
+SPEC=$(mktemp "${TMPDIR:-/tmp}/codex-spec.XXXXXX") || { echo 'STATUS: unavailable — could not write the spec file'; exit 1; }
+FINAL=$(mktemp "${TMPDIR:-/tmp}/codex-final.XXXXXX") || { echo 'STATUS: unavailable — could not write the spec file'; exit 1; }
 
-cat > "$SPEC" << 'SPEC_EOF_<12 random hex>'
+cat > "$SPEC" << 'SPEC_EOF_<12 random hex>' || { echo 'STATUS: unavailable — could not write the spec file'; exit 1; }
 Scope of this run: one implementation task, already planned and delegated by
 an orchestrating session. Implement it directly in this run. I explicitly opt
 out of starting an orchestration or delegation workflow for it. The model and
