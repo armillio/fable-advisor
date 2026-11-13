@@ -10,6 +10,7 @@ import { validateLanes } from './validate-lanes.mjs';
 const root=dirname(dirname(fileURLToPath(import.meta.url)));
 const catalog=JSON.parse(readFileSync(join(root,'config/models.json'),'utf8')).lanes;
 const choicesPath=process.argv[2];
+const effortLanes=new Set(['routine','complex','pr_review']);
 const target=process.argv[3] ?? join(homedir(),'.claude/fable-advisor/lanes.json');
 if (!choicesPath) throw new Error('Usage: save-lanes.mjs CONFIRMED_CHOICES_JSON [TARGET_LANES_JSON]');
 const choices=JSON.parse(readFileSync(choicesPath,'utf8'));
@@ -71,11 +72,11 @@ try {
     const choice=choices[name];
     if (!choice || choice.provider!==lane.provider || typeof choice.model!=='string' || !choice.model.trim()) throw new Error(`Invalid confirmed ${name} choice`);
     if (name==='broad' && choice.model==='gemini-3.8-flash') throw new Error('Legacy Gemini CLI slug: explicitly choose an Antigravity model from agy models; existing configuration was not changed');
-    if ((name==='routine'||name==='complex') && (typeof choice.effort!=='string' || !choice.effort.trim())) throw new Error(`Missing ${name} effort`);
+    if (effortLanes.has(name) && (typeof choice.effort!=='string' || !choice.effort.trim())) throw new Error(`Missing ${name} effort`);
     const known=lane.options.find(o=>o.id===choice.model);
     if (known?.efforts && !known.efforts.includes(choice.effort)) throw new Error(`Unsupported ${name} effort ${choice.effort}`);
     next[name]={...(current[name]??{}),provider:lane.provider,model:choice.model};
-    if (name==='routine'||name==='complex') next[name].effort=choice.effort;
+    if (effortLanes.has(name)) next[name].effort=choice.effort;
     // Broad/reviewer effort is not used by this plugin; preserve stored metadata.
   }
   const backup=previous?`${target}.backup-${Date.now()}-${process.pid}`:null;

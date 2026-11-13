@@ -13,11 +13,12 @@ Claude Code lets every subagent run on a different model — and lets the sessio
 | Routine | **GPT-6 Luna** (effort `max` by default) | `luna-implementer` agent (default) | The spec fully determines the outcome — Codex does the typing via the [Codex CLI](https://github.com/openai/codex) |
 | Broad context | **Gemini 3.8 Flash** | `gemini-implementer` agent | Broad repository/design-system context or cross-module pattern discovery determines the work — Antigravity CLI uses your account to do the typing |
 | High-complexity | **GPT-6.1 Sol** (effort `high` by default) | `sol-implementer` agent | One-off tasks where judgment the spec can't capture decides the outcome: subtle concurrency, hard debugging, security-sensitive paths, wide refactors |
+| Pre-PR review | **GPT-6 Astra** (effort `high` by default) | `astra-reviewer` agent | Once before every pull request opens: a read-only cross-vendor review of the committed branch against its goal, returning pass / fix-first. |
 | Review | **Fable 5.2** | `fable-advisor` agent | Commitment boundaries, and **always once at the end** — the advisor reviews the accumulated changes before the architect reports done |
 
-**The Codex lanes have default reasoning efforts.** Luna runs at `max` and Sol at `high` unless the spec's `REASONING:` line overrides them (`low … max`, plus `ultra` on Sol). The Antigravity adapter pins the Medium model variant without a separate effort override. The session and advisor run at whatever `/effort` you set.
+**The Codex lanes have default reasoning efforts.** Luna runs at `max`, Sol at `high` and the Astra pre-PR reviewer at `high` unless the spec's `REASONING:` line overrides them (`low … max`, plus `ultra` on Sol and Astra). The Antigravity adapter pins the Medium model variant without a separate effort override. The session and advisor run at whatever `/effort` you set.
 
-**You can see which model runs each step.** The orchestration skill labels every delegation with its model (`GPT-6 Luna · max: add pagination`, `Gemini 3.8 Flash: build dashboard`, `Fable 5.2: final review`), announces each routing decision in one line, and the agents carry distinct UI colours.
+**You can see which model runs each step.** The orchestration skill labels every delegation with its model (`GPT-6 Luna · max: add pagination`, `Gemini 3.8 Flash: build dashboard`, `Fable 5.2: final review`, `GPT-6 Astra · high: pre-PR review`), announces each routing decision in one line, and the agents carry distinct UI colours.
 
 Tokens route by capability: the session emits judgment and specs; independent OpenAI/Google-family lanes emit code; Fable reviews. For high-stakes work, an architect may opt in to racing Luna vs Gemini, Gemini vs Sol, or Luna vs Sol in isolated worktrees, then compare actual diffs and verification rather than accepting the first finisher.
 
@@ -61,7 +62,7 @@ Model resolution order in Claude Code: `CLAUDE_CODE_SUBAGENT_MODEL` env var → 
 
 ## Choose your lane models
 
-Run `/fable-advisor:setup` once after installing. It configures four capability lanes: `routine` (Luna), `broad` (Gemini), `complex` (Sol), and `reviewer` (Fable). Codex efforts remain configurable; Gemini has no invented effort control. Choices live in `~/.claude/fable-advisor/lanes.json` (version 2). Existing version-1 files remain readable: their three choices stay intact and a missing `broad` resolves to built-in Gemini 3.8 Flash. Re-running setup migrates safely with a backup, preserving custom models. The model catalog is `config/models.json`. Setup recommends **Claude Opus 5.5 for the session architect** but never changes the current session.
+Run `/fable-advisor:setup` once after installing. It configures five capability lanes: `routine` (Luna), `broad` (Gemini), `complex` (Sol), `reviewer` (Fable), and `pr_review` (Astra). Codex efforts remain configurable; Gemini has no invented effort control. Choices live in `~/.claude/fable-advisor/lanes.json` (version 2). Existing version-1 files remain readable: their three choices stay intact and a missing `broad` resolves to built-in Gemini 3.8 Flash. Re-running setup migrates safely with a backup, preserving custom models. The model catalog is `config/models.json`. Setup recommends **Claude Opus 5.5 for the session architect** but never changes the current session.
 
 ## Use it
 

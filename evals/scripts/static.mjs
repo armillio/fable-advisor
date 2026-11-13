@@ -13,23 +13,25 @@ const tests = [];
 const check = (name, fn) => { try { fn(); tests.push([name, true]); } catch (error) { tests.push([name, false, error.message]); } };
 const assert = (value, message) => { if (!value) throw new Error(message); };
 const catalog = JSON.parse(read('config/models.json')).lanes;
-const textFiles = ['README.md', 'commands/setup.md', 'skills/orchestration/SKILL.md', 'agents/luna-implementer.md', 'agents/sol-implementer.md', 'agents/gemini-implementer.md', 'agents/fable-advisor.md'];
-for (const name of ['routine', 'broad', 'complex', 'reviewer']) {
+const textFiles = ['README.md', 'commands/setup.md', 'skills/orchestration/SKILL.md', 'agents/luna-implementer.md', 'agents/sol-implementer.md', 'agents/gemini-implementer.md', 'agents/fable-advisor.md', 'agents/astra-reviewer.md'];
+for (const name of ['routine', 'broad', 'complex', 'reviewer', 'pr_review']) {
   check(`catalog ${name}`, () => assert(catalog[name]?.options.some(o => o.id === catalog[name].recommended), `missing recommended ${name}`));
 }
-check('recommended model IDs', () => assert(catalog.routine.recommended === 'gpt-6-luna' && catalog.broad.recommended === 'gemini-3.8-flash-medium' && catalog.complex.recommended === 'gpt-6.1-sol' && catalog.reviewer.recommended === 'fable', 'wrong model mapping'));
+check('recommended model IDs', () => assert(catalog.routine.recommended === 'gpt-6-luna' && catalog.broad.recommended === 'gemini-3.8-flash-medium' && catalog.complex.recommended === 'gpt-6.1-sol' && catalog.reviewer.recommended === 'fable' && catalog.pr_review.recommended === 'gpt-6-astra', 'wrong model mapping'));
 check('effort preservation', () => assert(catalog.routine.options[0].default_effort === 'max' && catalog.complex.options[0].default_effort === 'high' && !('efforts' in catalog.broad.options[0]), 'invalid effort schema'));
-check('all agents exist', () => { for (const name of ['luna','gemini','sol']) assert(existsSync(join(root, `agents/${name}-implementer.md`)), `missing ${name}`); });
+check('all agents exist', () => { for (const name of ['luna','gemini','sol']) assert(existsSync(join(root, `agents/${name}-implementer.md`)), `missing ${name}`); assert(existsSync(join(root, 'agents/astra-reviewer.md')), 'missing astra-reviewer'); });
 check('Markdown frontmatter', () => { for (const file of textFiles.filter(f => f.endsWith('.md') && f !== 'README.md')) { const s = read(file); assert(/^---\n[\s\S]+?\n---\n/.test(s), file); assert(/^(name|description):/m.test(s), file); } });
 check('JSON manifests', () => { for (const file of ['.claude-plugin/plugin.json','.claude-plugin/marketplace.json','config/models.json','package.json']) JSON.parse(read(file)); });
 check('behavior case JSON', () => { for (const group of ['routing','escalation','fallback','verification','review']) for (const file of readdirSync(join(root,'evals/cases',group)).filter(f=>f.endsWith('.json'))) { const value=JSON.parse(read(`evals/cases/${group}/${file}`)); assert(value.id && value.group && value.prompt && value.expected, file); } });
-check('setup four lanes and safe migration', () => { const s=read('commands/setup.md'); for (const lane of Object.keys(catalog)) assert(s.includes(lane), lane); assert(/version.1/i.test(s) && /backup/i.test(s) && /atomically/i.test(s), 'migration'); });
+check('setup lists every lane and migrates safely', () => { const s=read('commands/setup.md'); for (const lane of Object.keys(catalog)) assert(s.includes(lane), lane); assert(/version.1/i.test(s) && /backup/i.test(s) && /atomically/i.test(s), 'migration'); });
 check('orchestration capability names', () => { const s=read('skills/orchestration/SKILL.md'); for (const lane of Object.keys(catalog)) assert(s.includes('`'+lane+'`'), lane); assert(/Do not route by file count alone/i.test(s), 'file count'); });
 check('stable report statuses', () => { for (const file of ['agents/luna-implementer.md','agents/sol-implementer.md','agents/gemini-implementer.md']) for (const status of ['complete','partial','timeout','unavailable','refused','blocked']) assert(read(file).includes(status), `${file}: ${status}`); });
 check('no silent provider fallback', () => { for (const file of ['agents/luna-implementer.md','agents/sol-implementer.md','agents/gemini-implementer.md']) assert(/never.*(?:fallback|substitut)|no silent fallback/i.test(read(file)), file); });
 check('Codex lanes retain model and sandbox flags', () => { assert(read('agents/luna-implementer.md').includes('--model gpt-6-luna') && read('agents/luna-implementer.md').includes('--sandbox workspace-write'), 'Luna command'); assert(read('agents/sol-implementer.md').includes('--model gpt-6.1-sol') && read('agents/sol-implementer.md').includes('--sandbox workspace-write'), 'Sol command'); });
 check('Codex timeout prefix is zsh-safe', () => { for (const file of ['agents/luna-implementer.md','agents/sol-implementer.md']) { const s=read(file); assert(!/^\$\{T:\+/m.test(s) && s.includes('if [ -n "$T" ]; then "$T"') && s.includes('set -- codex exec'), file); } });
+check('pre-PR reviewer read-only', () => { const s=read('agents/astra-reviewer.md'); assert(/^tools: Bash, Read, Grep, Glob$/m.test(s) && s.includes('--sandbox read-only') && !s.includes('--sandbox workspace-write') && !s.includes('--sandbox danger-full-access') && !/^\$\{T:\+/m.test(s), 'astra-reviewer must stay read-only'); });
 check('reviewer read-only', () => { const s=read('agents/fable-advisor.md'); assert(/tools: Read, Grep, Glob/.test(s) && !/tools:.*(?:Write|Edit|Bash)/.test(s), 'reviewer tools'); });
+check('pre-PR gate policy', () => { const s=read('skills/orchestration/SKILL.md'); assert(/No PR without it/.test(s) && /Two `fix-first` rounds, then stop/.test(s) && /Timeouts get one retry/.test(s) && /same full range/.test(s) && /fix-first` means at least one blocker or major/.test(s), 'pre-PR gate policy missing'); });
 check('final review gate', () => assert(/Do not report done before this final review/i.test(read('skills/orchestration/SKILL.md')), 'missing final gate'));
 check('safe Gemini execution flags', () => { const s=read('scripts/gemini-lane.sh'); assert(s.includes('--sandbox --mode accept-edits') && s.includes('--input-format stream-json --output-format stream-json') && !s.includes('--dangerously-skip-permissions') && !s.includes(' --yolo') && !s.includes('danger-full-access'), 'unsafe flags'); });
 check('deprecated IDs absent from active definitions', () => { for (const file of ['config/models.json','agents/luna-implementer.md','agents/sol-implementer.md','agents/gemini-implementer.md']) assert(!/gpt-5\.|gemini-2\./.test(read(file)), file); });
@@ -40,7 +42,8 @@ writeFileSync(join(temp,'choices.json'),JSON.stringify({
   routine:{provider:'openai',model:'gpt-6-luna',effort:'max'},
   broad:{provider:'google',model:'gemini-3.8-flash-medium'},
   complex:{provider:'openai',model:'gpt-6.1-sol',effort:'high'},
-  reviewer:{provider:'anthropic',model:'fable'}
+  reviewer:{provider:'anthropic',model:'fable'},
+  pr_review:{provider:'openai',model:'gpt-6-astra',effort:'high'}
 }));
 const basePath = '/usr/bin:/bin';
 function run(command, args, opts={}) { return spawnSync(command, args, { encoding:'utf8', ...opts }); }
@@ -248,7 +251,7 @@ check('Codex preflight unavailable in isolated PATH', () => {
   for (const file of ['agents/luna-implementer.md','agents/sol-implementer.md']) assert(read(file).includes('STATUS: unavailable'),file);
 });
 check('version-1 custom choices preserved', () => { const path=join(temp,'lanes-v1.json'); writeFileSync(path,JSON.stringify({version:1,routine:{provider:'openai',model:'custom-luna',effort:'low'},complex:{provider:'openai',model:'gpt-6.1-sol',effort:'high'},reviewer:{provider:'anthropic',model:'opus'}})); const r=run('node',[join(root,'scripts/resolve-lanes.mjs'),path]); assert(r.status===0,r.stderr); const value=JSON.parse(r.stdout); assert(value.broad.model==='gemini-3.8-flash-medium' && value.routine.model==='custom-luna' && value.routine.effort==='low' && value.reviewer.model==='opus','migration lost choices'); assert(JSON.parse(readFileSync(path,'utf8')).version===1,'resolver rewrote config'); });
-check('version-1 setup migration is backed up and atomic', () => { const target=join(temp,'save-test','lanes.json'); mkdirSync(dirname(target),{recursive:true}); const old={version:1,custom_setting:'keep',routine:{provider:'openai',model:'custom-luna',effort:'low'},complex:{provider:'openai',model:'gpt-6.1-sol',effort:'high'},reviewer:{provider:'anthropic',model:'opus'}}; writeFileSync(target,JSON.stringify(old)); const choices=join(temp,'migration-choices.json'); writeFileSync(choices,JSON.stringify({routine:old.routine,broad:{provider:'google',model:'gemini-3.8-flash-medium'},complex:old.complex,reviewer:old.reviewer})); const r=run('node',[join(root,'scripts/save-lanes.mjs'),choices,target]); assert(r.status===0,r.stderr); const output=JSON.parse(r.stdout), saved=JSON.parse(readFileSync(target,'utf8')); assert(saved.version===2 && saved.custom_setting==='keep' && saved.routine.model==='custom-luna' && saved.reviewer.model==='opus' && saved.broad.model==='gemini-3.8-flash-medium','bad migration'); assert(JSON.parse(readFileSync(output.backup,'utf8')).version===1,'missing backup'); });
+check('version-1 setup migration is backed up and atomic', () => { const target=join(temp,'save-test','lanes.json'); mkdirSync(dirname(target),{recursive:true}); const old={version:1,custom_setting:'keep',routine:{provider:'openai',model:'custom-luna',effort:'low'},complex:{provider:'openai',model:'gpt-6.1-sol',effort:'high'},reviewer:{provider:'anthropic',model:'opus'}}; writeFileSync(target,JSON.stringify(old)); const choices=join(temp,'migration-choices.json'); writeFileSync(choices,JSON.stringify({routine:old.routine,broad:{provider:'google',model:'gemini-3.8-flash-medium'},complex:old.complex,reviewer:old.reviewer,pr_review:{provider:'openai',model:'gpt-6-astra',effort:'high'}})); const r=run('node',[join(root,'scripts/save-lanes.mjs'),choices,target]); assert(r.status===0,r.stderr); const output=JSON.parse(r.stdout), saved=JSON.parse(readFileSync(target,'utf8')); assert(saved.version===2 && saved.custom_setting==='keep' && saved.routine.model==='custom-luna' && saved.reviewer.model==='opus' && saved.broad.model==='gemini-3.8-flash-medium','bad migration'); assert(JSON.parse(readFileSync(output.backup,'utf8')).version===1,'missing backup'); });
 check('invalid migration leaves existing config untouched', () => { const target=join(temp,'invalid-lanes.json'); const old='{"version":3,"custom":"keep"}'; writeFileSync(target,old); const choices=join(temp,'choices.json'); const r=run('node',[join(root,'scripts/save-lanes.mjs'),choices,target]); assert(r.status!==0,'accepted future version'); assert(readFileSync(target,'utf8')===old,'config changed'); });
 check('explicit legacy broad pin is preserved with a warning', () => { const target=join(temp,'legacy.json'); const old=JSON.stringify({version:2,broad:{provider:'google',model:'gemini-3.8-flash'}}); writeFileSync(target,old); const r=run('node',[join(root,'scripts/resolve-lanes.mjs'),target]); assert(r.status===0 && JSON.parse(r.stdout).broad.model==='gemini-3.8-flash' && r.stderr.includes('legacy'), 'legacy pin silently changed'); assert(readFileSync(target,'utf8')===old,'user config was rewritten'); });
 check('setup refuses legacy broad slug without overwriting', () => { const target=join(temp,'legacy-save.json'); const old=JSON.stringify({version:2,custom:'keep'}); writeFileSync(target,old); const choices=JSON.parse(readFileSync(join(temp,'choices.json'),'utf8')); choices.broad.model='gemini-3.8-flash'; const input=join(temp,'legacy-choice.json'); writeFileSync(input,JSON.stringify(choices)); const r=run('node',[join(root,'scripts/save-lanes.mjs'),input,target]); assert(r.status!==0 && readFileSync(target,'utf8')===old,'legacy migration lost user config'); });
@@ -332,7 +335,7 @@ check('old shell-string verifier is rejected without execution', () => {
   assert(r.status!==0 && r.stdout.includes('STATUS: partial') && !existsSync(join(r.dir,'injected.txt')),'legacy shell command executed');
 });
 check('malformed root and lane values are rejected without rewriting', () => {
-  const invalid=[null,[],42,'invalid',...['broad','routine','complex','reviewer'].flatMap(lane=>
+  const invalid=[null,[],42,'invalid',...['broad','routine','complex','reviewer','pr_review'].flatMap(lane=>
     [null,[],42,'invalid',{model:null},{model:42},{model:''},{provider:null},{effort:[]}].map(value=>({version:2,[lane]:value})))];
   const target=join(temp,'malformed.json');
   for(const value of invalid) {
@@ -363,7 +366,7 @@ check('saving choices preserves unused broad and reviewer effort metadata', () =
 });
 check('custom Codex models require explicit effort without changing config', () => {
   const target=join(temp,'custom-effort.json');
-  for (const lane of ['routine','complex']) {
+  for (const lane of ['routine','complex','pr_review']) {
     for (const effort of [undefined,'low']) {
       const raw=JSON.stringify({version:2,[lane]:{model:'custom-model',effort}}); writeFileSync(target,raw);
       const r=run(process.execPath,[join(root,'scripts/resolve-lanes.mjs'),target]);
@@ -376,10 +379,14 @@ check('custom Codex models require explicit effort without changing config', () 
   const r=run(process.execPath,[join(root,'scripts/resolve-lanes.mjs'),target]);
   const value=JSON.parse(r.stdout);
   assert(r.status===0 && value.routine.effort==='medium' && value.complex.effort==='max','known model defaults lost');
+  writeFileSync(target,JSON.stringify({routine:{model:'gpt-6-sol'},complex:{model:'gpt-6-sol'}}));
+  const legacy=run(process.execPath,[join(root,'scripts/resolve-lanes.mjs'),target]);
+  const pinned=JSON.parse(legacy.stdout);
+  assert(legacy.status===0 && pinned.routine.effort==='medium' && pinned.complex.effort==='high','legacy gpt-6-sol pins lost their default effort');
 });
 check('effort-only choices are checked against their recommended model', () => {
   const target=join(temp,'effort-only.json');
-  for(const [lane,invalid,valid] of [['routine','ultra','low'],['complex','unsupported-effort','high']]) {
+  for(const [lane,invalid,valid] of [['routine','ultra','low'],['complex','unsupported-effort','high'],['pr_review','unsupported-effort','high']]) {
     const original=JSON.stringify({version:2,[lane]:{effort:invalid}});
     writeFileSync(target,original);
     const resolved=run(process.execPath,[join(root,'scripts/resolve-lanes.mjs'),target]);

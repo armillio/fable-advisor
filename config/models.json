@@ -36,6 +36,14 @@
         { "id": "opus", "label": "Opus 5.5" },
         { "id": "sonnet", "label": "Sonnet 5.5" }
       ]
+    },
+    "pr_review": {
+      "provider": "openai",
+      "recommended": "gpt-6-astra",
+      "options": [
+        { "id": "gpt-6-astra", "label": "GPT-6 Astra", "efforts": ["low", "medium", "high", "xhigh", "max", "ultra"], "default_effort": "high" },
+        { "id": "gpt-6.1-sol", "label": "GPT-6.1 Sol", "efforts": ["low", "medium", "high", "xhigh", "max", "ultra"], "default_effort": "high" }
+      ]
     }
   }
 }
