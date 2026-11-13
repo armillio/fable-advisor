@@ -5,7 +5,7 @@ import { homedir, hostname } from 'node:os';
 import { setImmediate } from 'node:timers/promises';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { validateLanes } from './validate-lanes.mjs';
+import { validateLanes, findModel } from './validate-lanes.mjs';
 
 const root=dirname(dirname(fileURLToPath(import.meta.url)));
 const catalog=JSON.parse(readFileSync(join(root,'config/models.json'),'utf8')).lanes;
@@ -73,7 +73,7 @@ try {
     if (!choice || choice.provider!==lane.provider || typeof choice.model!=='string' || !choice.model.trim()) throw new Error(`Invalid confirmed ${name} choice`);
     if (name==='broad' && choice.model==='gemini-3.8-flash') throw new Error('Legacy Gemini CLI slug: explicitly choose an Antigravity model from agy models; existing configuration was not changed');
     if (effortLanes.has(name) && (typeof choice.effort!=='string' || !choice.effort.trim())) throw new Error(`Missing ${name} effort`);
-    const known=lane.options.find(o=>o.id===choice.model);
+    const known=findModel(catalog,lane,choice.model);
     if (known?.efforts && !known.efforts.includes(choice.effort)) throw new Error(`Unsupported ${name} effort ${choice.effort}`);
     next[name]={...(current[name]??{}),provider:lane.provider,model:choice.model};
     if (effortLanes.has(name)) next[name].effort=choice.effort;

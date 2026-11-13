@@ -4,7 +4,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { validateLanes } from './validate-lanes.mjs';
+import { validateLanes, findModel } from './validate-lanes.mjs';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const catalog = JSON.parse(readFileSync(join(root, 'config/models.json'), 'utf8')).lanes;
@@ -23,7 +23,7 @@ for (const [name, lane] of Object.entries(catalog)) {
     console.error('Broad lane retains a legacy Gemini CLI slug. Run setup to confirm an Antigravity model slug; no config was changed.');
   }
   if (effortLanes.has(name)) {
-    const model = lane.options.find(option => option.id === result[name].model);
+    const model = findModel(catalog, lane, result[name].model);
     const effort = choice.effort ?? model?.default_effort;
     if (effort === undefined) {
       throw new Error(`Custom ${name} model requires an explicit effort; run setup to confirm a supported pairing. No config was changed.`);

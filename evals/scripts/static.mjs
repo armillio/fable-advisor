@@ -387,6 +387,14 @@ check('custom Codex models require explicit effort without changing config', () 
   const pinned=JSON.parse(legacy.stdout);
   assert(legacy.status===0 && pinned.routine.effort==='medium' && pinned.complex.effort==='high','legacy gpt-6-sol pins lost their default effort');
 });
+check('known models keep their effort limits in any same-provider lane', () => {
+  let error; try { validateLanes({pr_review:{provider:'openai',model:'gpt-6-luna',effort:'ultra'}},catalog); } catch(e) { error=e; }
+  assert(error?.message.includes('Unsupported pr_review effort'),'ultra accepted for gpt-6-luna in pr_review');
+  validateLanes({pr_review:{provider:'openai',model:'gpt-6-luna',effort:'max'}},catalog);
+  const target=join(temp,'cross-lane.json'); writeFileSync(target,JSON.stringify({version:2,pr_review:{model:'gpt-6-luna'}}));
+  const r=run(process.execPath,[join(root,'scripts/resolve-lanes.mjs'),target]);
+  assert(r.status===0 && JSON.parse(r.stdout).pr_review.effort==='max',r.stdout+r.stderr);
+});
 check('effort-only choices are checked against their recommended model', () => {
   const target=join(temp,'effort-only.json');
   for(const [lane,invalid,valid] of [['routine','ultra','low'],['complex','unsupported-effort','high'],['pr_review','unsupported-effort','high']]) {
