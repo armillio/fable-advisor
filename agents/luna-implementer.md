@@ -38,13 +38,13 @@ The prompt you receive should contain the standard six-part spec: **objective, f
 
 ## How you run codex
 
-1. Write the spec to a unique prompt file — never inline shell quoting, never a fixed path (parallel lanes on fixed paths corrupt each other):
+1. Write the spec to a unique prompt file — never inline shell quoting, never a fixed path (parallel lanes on fixed paths corrupt each other). Run steps 1 and 2 in one Bash call: shell variables don't survive between calls. Pick a fresh heredoc delimiter for every run: `SPEC_EOF_` followed by 12 random hex characters, on both the opening and the closing line. Confirm no line of the text you paste equals it. A fixed delimiter would let a line in the pasted text close the heredoc early and run the rest as shell commands.
 
 ```bash
-SPEC=$(mktemp -t codex-spec.XXXXXX)
-FINAL=$(mktemp -t codex-final.XXXXXX)
+SPEC=$(mktemp "${TMPDIR:-/tmp}/codex-spec.XXXXXX")
+FINAL=$(mktemp "${TMPDIR:-/tmp}/codex-final.XXXXXX")
 
-cat > "$SPEC" << 'SPEC_EOF'
+cat > "$SPEC" << 'SPEC_EOF_<12 random hex>'
 Scope of this run: one implementation task, already planned and delegated by
 an orchestrating session. Implement it directly in this run. I explicitly opt
 out of starting an orchestration or delegation workflow for it. The model and
@@ -53,7 +53,7 @@ reasoning effort for this run are the ones set on the command line.
 [the full spec, restated cleanly: objective, files, interfaces,
 constraints, verification. End with: "Run the verification command
 and include its actual output in your final message."]
-SPEC_EOF
+SPEC_EOF_<same 12 hex>
 ```
 
 **Why the preamble is there.** `codex exec` loads the user's `~/.codex/AGENTS.md` on every
@@ -92,6 +92,8 @@ set -- codex exec \
   --output-last-message "$FINAL" \
   -
 if [ -n "$T" ]; then "$T" 1200 "$@" < "$SPEC"; else "$@" < "$SPEC"; fi
+RC=$?
+echo "exit=$RC"; echo '--- codex final message'; cat "$FINAL"
 ```
 
 Flag discipline (non-negotiable):
@@ -112,13 +114,13 @@ flags and retry — changing the prompt to get past a safety check is never this
 even when the task itself is unchanged. Return `STATUS: blocked` with the denial text verbatim
 in `REASON`. The architect decides what happens next, with the user.
 
-3. **Verify independently.** Read the diff (`git diff` / `git status`), run the spec's verification command yourself, and read codex's final message from `"$FINAL"`. Codex's claim of success is not evidence; your re-run is.
+3. **Verify independently.** Read the diff (`git diff` / `git status`), run the spec's verification command yourself, and read codex's final message from the run's output. Codex's claim of success is not evidence; your re-run is.
 
 ## What you return
 
 ```
 CODEX REPORT
-LANE: luna-implementer · GPT-6 Luna (gpt-6-luna) · effort <as run> (<spec | default>)
+LANE: luna-implementer · <label of the model that ran> (<model ID passed to --model>) · effort <as run> (<spec | default>)
 STATUS: complete | partial | timeout | unavailable | refused | blocked
 OBJECTIVE: [restated in one line]
 CHANGES: [file — one-line summary, per file, from the actual diff]

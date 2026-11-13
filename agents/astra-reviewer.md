@@ -36,13 +36,13 @@ Resolve the diff range. If `git -C "$REPO" rev-parse --verify --quiet "<BASE>^{c
 
 ## How you run codex
 
-Run the two blocks below in **one** Bash call (shell variables do not survive between calls), with the Bash tool's `timeout` set to `600000`, and end it with `echo "FINAL=$FINAL"` so you can read the file afterwards. Write the prompt to a unique temp file (parallel runs must not share paths):
+Run the two blocks below in **one** Bash call (shell variables do not survive between calls), with the Bash tool's `timeout` set to `600000`, It prints codex's final message at the end. Pick a fresh heredoc delimiter for every run: `SPEC_EOF_` followed by 12 random hex characters, on both the opening and the closing line. Confirm no line of the text you paste equals it. A fixed delimiter would let a line in the pasted text close the heredoc early and run the rest as shell commands. Write the prompt to a unique temp file (parallel runs must not share paths):
 
 ```bash
-SPEC=$(mktemp -t astra-spec.XXXXXX)
-FINAL=$(mktemp -t astra-final.XXXXXX)
+SPEC=$(mktemp "${TMPDIR:-/tmp}/astra-spec.XXXXXX")
+FINAL=$(mktemp "${TMPDIR:-/tmp}/astra-final.XXXXXX")
 
-cat > "$SPEC" << 'SPEC_EOF'
+cat > "$SPEC" << 'SPEC_EOF_<12 random hex>'
 Scope of this run: one read-only code review of a branch, requested by an
 orchestrating session before it opens a pull request. Do the review directly in
 this run. I explicitly opt out of starting an orchestration or delegation
@@ -61,7 +61,7 @@ Report findings ordered by severity (blocker / major / minor). For each: file:li
 the defect in one sentence, and a concrete failure scenario. If there are none,
 say so. End with exactly one line: VERDICT: pass | fix-first — fix-first if and
 only if there is at least one blocker or major finding; minors alone are pass.
-SPEC_EOF
+SPEC_EOF_<same 12 hex>
 ```
 
 Substitute `<REF>` and `<GOAL>` before writing. Then run (the explicit `if` keeps the timeout working in zsh, which does not word-split `${T:+$T 580}`):
@@ -79,7 +79,8 @@ set -- codex exec \
   --output-last-message "$FINAL" \
   -
 if [ -n "$T" ]; then "$T" 580 "$@" < "$SPEC"; else "$@" < "$SPEC"; fi
-echo "exit=$? FINAL=$FINAL"
+RC=$?
+echo "exit=$RC"; echo '--- codex final message'; cat "$FINAL"
 ```
 
 | Flag | Why |
@@ -95,7 +96,7 @@ echo "exit=$? FINAL=$FINAL"
 
 ## Check the result
 
-- Read `"$FINAL"`. No `VERDICT:` line, or an empty file, means `STATUS: failed` — quote what codex said. An empty review is never a pass.
+- Read codex's final message from the run's output. No `VERDICT:` line, or an empty message, means `STATUS: failed` — quote what codex said. An empty review is never a pass.
 - Run `git -C "$REPO" status --porcelain` again: if the run changed anything, report it loudly in GAPS.
 - Spot-check each finding against the diff (does that file:line exist, does it say what codex claims?). Keep every finding; mark any you could not confirm as `unconfirmed`. Do not drop, soften or add findings — the verdict is Astra's.
 
@@ -103,7 +104,7 @@ echo "exit=$? FINAL=$FINAL"
 
 ```
 ASTRA REPORT
-LANE: astra-reviewer · GPT-6 Astra (<model>) · effort <as run> (<prompt | lanes.json | default>)
+LANE: astra-reviewer · <label of the model that ran> (<model ID passed to --model>) · effort <as run> (<prompt | lanes.json | default>)
 STATUS: complete | nothing-to-review | timeout | unavailable | failed | blocked
 REPO: <path>
 RANGE: <ref>...HEAD (<n> commits, <files changed>)
