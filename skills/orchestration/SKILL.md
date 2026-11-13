@@ -13,8 +13,8 @@ The session is the architect: it owns requirements, architecture, decomposition,
 |---|---|---|---|
 | `routine` | GPT-6 Luna (`gpt-6-luna`, effort `max` by default) | `luna-implementer` | Fully specified, mechanical changes; straightforward features, wiring, CRUD, pattern-following tests. Default when the spec determines the answer. |
 | `broad` | Gemini 3.8 Flash (`gemini-3.8-flash-medium`) | `gemini-implementer` | Broad repository context, frontend/UI or design-system consistency, pattern discovery or propagation across modules. Context-heavy but not unusually hard reasoning. |
-| `complex` | GPT-6 Sol (`gpt-6-sol`, effort `high` by default) | `sol-implementer` | Difficult unresolved judgment; subtle concurrency, races, security/cryptography, high-risk migrations or data loss, hard sync semantics, or debugging that resisted a capable attempt. |
-| `reviewer` | Fable 5.1 (`fable`) | `fable-advisor` | Read-only commitment-boundary advice and mandatory final review. Never implementation. |
+| `complex` | GPT-6.1 Sol (`gpt-6.1-sol`, effort `high` by default) | `sol-implementer` | Difficult unresolved judgment; subtle concurrency, races, security/cryptography, high-risk migrations or data loss, hard sync semantics, or debugging that resisted a capable attempt. |
+| `reviewer` | Fable 5.2 (`fable`) | `fable-advisor` | Read-only commitment-boundary advice and mandatory final review. Never implementation. |
 
 The broad wrapper invokes Antigravity CLI (`agy`) with the user's signed-in account, never an API-key fallback. Explicit legacy `gemini-3.8-flash` pins require a user-confirmed setup change to an Antigravity slug; do not silently remap them.
 
@@ -52,7 +52,7 @@ Emit judgment, not volume: the architect writes specs and evaluates diffs, rathe
 
 Codex lanes retain their existing effort contract. Luna defaults to `max` and supports `low`, `medium`, `high`, `xhigh`, `max`; Sol defaults to `high` and also supports `ultra`. The spec's optional `REASONING: <effort>` overrides the default exactly; do not round unsupported rungs. Use low/medium for mechanical work, high/xhigh for interactions, max for truly hard work, and Sol's ultra only when worth its extra cost. The Antigravity adapter selects the Medium Gemini model variant by slug and has **no separate effort override**; do not translate Codex effort values. The architect and advisor inherit Claude session effort.
 
-Label each delegation in the UI with the actual model (`GPT-6 Luna · max: ...`, `Gemini 3.8 Flash: ...`, `GPT-6 Sol · high: ...`, `Fable 5.1: final review`), and announce the routing choice in one line. Retain the lane report's `LANE:` line when summarizing so the model that actually ran remains visible.
+Label each delegation in the UI with the actual model (`GPT-6 Luna · max: ...`, `Gemini 3.8 Flash: ...`, `GPT-6.1 Sol · high: ...`, `Fable 5.2: final review`), and announce the routing choice in one line. Retain the lane report's `LANE:` line when summarizing so the model that actually ran remains visible.
 
 ## Spec contract
 
@@ -72,7 +72,7 @@ For every deliverable, the required order is:
 implementation → architect diff/evidence inspection → architect verification → fable-advisor clean-context final review → completion
 ```
 
-Consult `fable-advisor` before architecture decisions, migrations, API shapes, major refactor strategies, and after two failed attempts. At the end, give it the stated goal, accumulated diff, constraints, and verification evidence. It returns ship / fix-first / rethink and remains read-only. Act on its verdict or surface disagreement. **Do not report done before this final review unless the user explicitly disables it.** The user may override the reviewer model in setup, but the default remains Fable 5.1; do not replace it merely because Opus 5.5 is recommended for the session architect.
+Consult `fable-advisor` before architecture decisions, migrations, API shapes, major refactor strategies, and after two failed attempts. At the end, give it the stated goal, accumulated diff, constraints, and verification evidence. It returns ship / fix-first / rethink and remains read-only. Act on its verdict or surface disagreement. **Do not report done before this final review unless the user explicitly disables it.** The user may override the reviewer model in setup, but the default remains Fable 5.2; do not replace it merely because Opus 5.5 is recommended for the session architect.
 
 ## Optional Codex plugin
 

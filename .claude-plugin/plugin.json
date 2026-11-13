@@ -1,7 +1,7 @@
 {
   "name": "fable-advisor",
   "version": "6.2.0",
-  "description": "Architect-as-orchestrator for Claude Code: GPT-6 Luna handles routine work, Gemini 3.8 Flash handles broad-context work, GPT-6 Sol handles complex work, and Fable 5.1 reviews every deliverable.",
+  "description": "Architect-as-orchestrator for Claude Code: GPT-6 Luna handles routine work, Gemini 3.8 Flash handles broad-context work, GPT-6.1 Sol handles complex work, and Fable 5.2 reviews every deliverable.",
   "author": {
     "name": "Dan McAteer",
     "url": "https://github.com/DannyMac180"

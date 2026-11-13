@@ -22,7 +22,7 @@ Configure the four capability lanes; the parent Claude Code session model is **n
      "version": 2,
      "routine": { "provider": "openai", "model": "gpt-6-luna", "effort": "max" },
      "broad": { "provider": "google", "model": "gemini-3.8-flash-medium" },
-     "complex": { "provider": "openai", "model": "gpt-6-sol", "effort": "high" },
+     "complex": { "provider": "openai", "model": "gpt-6.1-sol", "effort": "high" },
      "reviewer": { "provider": "anthropic", "model": "fable" }
    }
    ```
