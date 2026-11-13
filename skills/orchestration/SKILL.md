@@ -19,7 +19,7 @@ The session is the architect: it owns requirements, architecture, decomposition,
 
 The broad wrapper invokes Antigravity CLI (`agy`) with the user's signed-in account, never an API-key fallback. Explicit legacy `gemini-3.8-flash` pins require a user-confirmed setup change to an Antigravity slug; do not silently remap them.
 
-The wrappers are lightweight Claude subagents; the external model actually writes implementation. A missing, unauthenticated, blocked, or unavailable provider is **not** permission to let the Claude wrapper type code or silently substitute a different model.
+The wrappers are lightweight Claude subagents; the external model actually writes implementation. The Codex lanes (`routine`, `complex`, `pr_review`) all run through `scripts/codex-lane.sh`: it takes the model only from lane configuration, checks any effort override against the catalog, fixes the sandbox per lane, caps a run at 580 seconds to fit the Bash tool's 10-minute ceiling, and checks the result. The wrapper passes just the lane, an optional effort and the spec on stdin. A missing, unauthenticated, blocked, or unavailable provider is **not** permission to let the Claude wrapper type code or silently substitute a different model.
 
 ### Read user configuration
 
