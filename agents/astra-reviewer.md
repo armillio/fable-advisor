@@ -30,7 +30,7 @@ git -C "$REPO" rev-parse --show-toplevel
 
 If codex is missing or unauthenticated, or the run reports the model is unavailable to this account, stop and return `STATUS: unavailable` with the exact error. Never review the code yourself as a substitute — the caller chose this lane for a non-Claude reviewer.
 
-Shell variables don't survive between Bash calls: start every call with `REPO=<path>`.
+Shell variables don't survive between Bash calls: start every call with `REPO='<absolute path>'`, single-quoted so a path with spaces stays one word (escape any `'` in the path as `'\''`).
 
 Resolve the diff range. If `git -C "$REPO" rev-parse --verify --quiet "<BASE>^{commit}"` succeeds and BASE contains a `/`, use it verbatim. For a bare branch name, prefer `origin/<BASE>` when that ref exists, else `<BASE>`. Name the ref you used in `RANGE`. If `git -C "$REPO" log <ref>..HEAD` is empty, return `STATUS: nothing-to-review`. If `git -C "$REPO" status --porcelain` shows modified tracked files, note in GAPS that uncommitted changes are not part of the review.
 
