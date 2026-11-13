@@ -1,3 +1,11 @@
+// A model's catalog entry: its own lane first, then any same-provider lane, so
+// effort limits apply wherever a known model is chosen.
+export function findModel(catalog, lane, id) {
+  return lane.options.find(option => option.id === id)
+    ?? Object.values(catalog).filter(other => other.provider === lane.provider)
+      .flatMap(other => other.options).find(option => option.id === id);
+}
+
 // Reject malformed present values; only absent fields may use defaults.
 export function validateLanes(config, catalog) {
   const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -15,7 +23,7 @@ export function validateLanes(config, catalog) {
     if ('provider' in choice && choice.provider !== lane.provider) throw new Error(`Incompatible provider for ${name}`);
     const modelLane = Object.values(catalog).find(candidate => candidate.options.some(option => option.id === choice.model));
     if (modelLane && modelLane.provider !== lane.provider) throw new Error(`Incompatible model provider for ${name}: ${choice.model}`);
-    const known = lane.options.find(option => option.id === (choice.model ?? lane.recommended));
+    const known = findModel(catalog, lane, choice.model ?? lane.recommended);
     if ('effort' in choice && known?.efforts && !known.efforts.includes(choice.effort)) {
       throw new Error(`Unsupported ${name} effort`);
     }

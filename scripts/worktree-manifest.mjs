@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Fingerprint reviewable paths without dereferencing symlinks or special files.
-import { spawn } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
 import { lstatSync, readlinkSync, openSync, fstatSync, readSync, closeSync, constants } from 'node:fs';
 import { createHash } from 'node:crypto';
 
@@ -33,6 +33,19 @@ function fingerprint(path) {
   try { stat=lstatSync(path); }
   catch(error) { if(error.code==='ENOENT') return 'MISSING'; throw error; }
   if(stat.isSymbolicLink()) return `LINK:${hash(readlinkSync(path,{encoding:'buffer'}))}`;
+  if(stat.isDirectory()) {
+    // A tracked directory is a submodule (gitlink); fingerprint its checked-out commit.
+    const sub=args=>execFileSync('git',['-C',path.toString(),...args],{stdio:['ignore','pipe','ignore'],maxBuffer:1<<30});
+    try {
+      // Commit plus uncommitted state, so edits inside a submodule count as changes.
+      const head=sub(['rev-parse','HEAD']).toString().trim();
+      // Untracked files need their contents hashed too: editing one changes neither status nor diff.
+      const untracked=sub(['ls-files','-z','--others','--exclude-standard']).toString().split('\0').filter(Boolean);
+      const contents=untracked.length ? execFileSync('git',['-C',path.toString(),'hash-object','--no-filters','--stdin-paths'],{input:untracked.join('\n'),stdio:['pipe','pipe','ignore'],maxBuffer:1<<30}) : Buffer.alloc(0);
+      return `SUBMODULE:${head}:${hash(Buffer.concat([sub(['status','--porcelain','--untracked-files=all']),sub(['diff','HEAD','--binary']),contents]))}`;
+    }
+    catch { return 'SUBMODULE:uninitialized'; }
+  }
   if(!stat.isFile()) throw new Error('Unsupported non-regular file');
   if(constants.O_NOFOLLOW===undefined || constants.O_NONBLOCK===undefined) throw new Error('Safe file-open flags unavailable');
   // O_NOFOLLOW prevents a leaf swap to a link; O_NONBLOCK prevents a FIFO swap

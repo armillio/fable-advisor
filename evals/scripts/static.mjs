@@ -13,22 +13,26 @@ const tests = [];
 const check = (name, fn) => { try { fn(); tests.push([name, true]); } catch (error) { tests.push([name, false, error.message]); } };
 const assert = (value, message) => { if (!value) throw new Error(message); };
 const catalog = JSON.parse(read('config/models.json')).lanes;
-const textFiles = ['README.md', 'commands/setup.md', 'skills/orchestration/SKILL.md', 'agents/luna-implementer.md', 'agents/sol-implementer.md', 'agents/gemini-implementer.md', 'agents/fable-advisor.md'];
-for (const name of ['routine', 'broad', 'complex', 'reviewer']) {
+const textFiles = ['README.md', 'commands/setup.md', 'skills/orchestration/SKILL.md', 'agents/luna-implementer.md', 'agents/sol-implementer.md', 'agents/gemini-implementer.md', 'agents/fable-advisor.md', 'agents/astra-reviewer.md'];
+for (const name of ['routine', 'broad', 'complex', 'reviewer', 'pr_review']) {
   check(`catalog ${name}`, () => assert(catalog[name]?.options.some(o => o.id === catalog[name].recommended), `missing recommended ${name}`));
 }
-check('recommended model IDs', () => assert(catalog.routine.recommended === 'gpt-6-luna' && catalog.broad.recommended === 'gemini-3.8-flash-medium' && catalog.complex.recommended === 'gpt-6-sol' && catalog.reviewer.recommended === 'fable', 'wrong model mapping'));
+check('recommended model IDs', () => assert(catalog.routine.recommended === 'gpt-6-luna' && catalog.broad.recommended === 'gemini-3.8-flash-medium' && catalog.complex.recommended === 'gpt-6.1-sol' && catalog.reviewer.recommended === 'fable' && catalog.pr_review.recommended === 'gpt-6-astra', 'wrong model mapping'));
 check('effort preservation', () => assert(catalog.routine.options[0].default_effort === 'max' && catalog.complex.options[0].default_effort === 'high' && !('efforts' in catalog.broad.options[0]), 'invalid effort schema'));
-check('all agents exist', () => { for (const name of ['luna','gemini','sol']) assert(existsSync(join(root, `agents/${name}-implementer.md`)), `missing ${name}`); });
+check('all agents exist', () => { for (const name of ['luna','gemini','sol']) assert(existsSync(join(root, `agents/${name}-implementer.md`)), `missing ${name}`); assert(existsSync(join(root, 'agents/astra-reviewer.md')), 'missing astra-reviewer'); });
 check('Markdown frontmatter', () => { for (const file of textFiles.filter(f => f.endsWith('.md') && f !== 'README.md')) { const s = read(file); assert(/^---\n[\s\S]+?\n---\n/.test(s), file); assert(/^(name|description):/m.test(s), file); } });
 check('JSON manifests', () => { for (const file of ['.claude-plugin/plugin.json','.claude-plugin/marketplace.json','config/models.json','package.json']) JSON.parse(read(file)); });
 check('behavior case JSON', () => { for (const group of ['routing','escalation','fallback','verification','review']) for (const file of readdirSync(join(root,'evals/cases',group)).filter(f=>f.endsWith('.json'))) { const value=JSON.parse(read(`evals/cases/${group}/${file}`)); assert(value.id && value.group && value.prompt && value.expected, file); } });
-check('setup four lanes and safe migration', () => { const s=read('commands/setup.md'); for (const lane of Object.keys(catalog)) assert(s.includes(lane), lane); assert(/version.1/i.test(s) && /backup/i.test(s) && /atomically/i.test(s), 'migration'); });
+check('setup lists every lane and migrates safely', () => { const s=read('commands/setup.md'); for (const lane of Object.keys(catalog)) assert(s.includes(lane), lane); assert(/version.1/i.test(s) && /backup/i.test(s) && /atomically/i.test(s), 'migration'); });
 check('orchestration capability names', () => { const s=read('skills/orchestration/SKILL.md'); for (const lane of Object.keys(catalog)) assert(s.includes('`'+lane+'`'), lane); assert(/Do not route by file count alone/i.test(s), 'file count'); });
 check('stable report statuses', () => { for (const file of ['agents/luna-implementer.md','agents/sol-implementer.md','agents/gemini-implementer.md']) for (const status of ['complete','partial','timeout','unavailable','refused','blocked']) assert(read(file).includes(status), `${file}: ${status}`); });
 check('no silent provider fallback', () => { for (const file of ['agents/luna-implementer.md','agents/sol-implementer.md','agents/gemini-implementer.md']) assert(/never.*(?:fallback|substitut)|no silent fallback/i.test(read(file)), file); });
-check('Codex lanes retain model and sandbox flags', () => { assert(read('agents/luna-implementer.md').includes('--model gpt-6-luna') && read('agents/luna-implementer.md').includes('--sandbox workspace-write'), 'Luna command'); assert(read('agents/sol-implementer.md').includes('--model gpt-6-sol') && read('agents/sol-implementer.md').includes('--sandbox workspace-write'), 'Sol command'); });
+check('spec heredocs use a per-run delimiter', () => { for (const file of ['agents/luna-implementer.md','agents/sol-implementer.md','agents/gemini-implementer.md','agents/astra-reviewer.md']) { const s=read(file); assert(!/<<\s*'SPEC_EOF'/.test(s) && !/^SPEC_EOF$/m.test(s) && s.includes('12 random hex'), file); } });
+check('Codex lanes run through codex-lane.sh', () => { for (const [file,lane] of [['agents/luna-implementer.md','routine'],['agents/sol-implementer.md','complex'],['agents/astra-reviewer.md','pr_review']]) { const s=read(file); assert(s.includes('scripts/codex-lane.sh" '+lane) && !/codex exec \\|--model gpt|mktemp|set -- codex/.test(s), file); } });
+check('codex-lane.sh fixes each lane\'s sandbox and evaluates nothing', () => { const s=read('scripts/codex-lane.sh'); assert(s.includes('routine) AGENT=luna-implementer SANDBOX=workspace-write') && s.includes('complex) AGENT=sol-implementer SANDBOX=workspace-write') && s.includes('pr_review) AGENT=astra-reviewer SANDBOX=read-only') && !s.includes('danger-full-access') && !/\beval\b/.test(s), 'codex-lane.sh'); });
+check('pre-PR reviewer read-only', () => { const s=read('agents/astra-reviewer.md'); assert(/^tools: Bash, Read, Grep, Glob$/m.test(s) && !s.includes('workspace-write') && !s.includes('danger-full-access'), 'astra-reviewer must stay read-only'); });
 check('reviewer read-only', () => { const s=read('agents/fable-advisor.md'); assert(/tools: Read, Grep, Glob/.test(s) && !/tools:.*(?:Write|Edit|Bash)/.test(s), 'reviewer tools'); });
+check('pre-PR gate policy', () => { const s=read('skills/orchestration/SKILL.md'); assert(/No PR without it/.test(s) && /Two `fix-first` rounds, then stop/.test(s) && /Timeouts get one retry/.test(s) && /same full range/.test(s) && /final commit/.test(s) && /fix-first` means at least one blocker or major/.test(s), 'pre-PR gate policy missing'); });
 check('final review gate', () => assert(/Do not report done before this final review/i.test(read('skills/orchestration/SKILL.md')), 'missing final gate'));
 check('safe Gemini execution flags', () => { const s=read('scripts/gemini-lane.sh'); assert(s.includes('--sandbox --mode accept-edits') && s.includes('--input-format stream-json --output-format stream-json') && !s.includes('--dangerously-skip-permissions') && !s.includes(' --yolo') && !s.includes('danger-full-access'), 'unsafe flags'); });
 check('deprecated IDs absent from active definitions', () => { for (const file of ['config/models.json','agents/luna-implementer.md','agents/sol-implementer.md','agents/gemini-implementer.md']) assert(!/gpt-5\.|gemini-2\./.test(read(file)), file); });
@@ -38,8 +42,9 @@ const temp = mkdtempSync(join(tmpdir(), 'fable-eval-'));
 writeFileSync(join(temp,'choices.json'),JSON.stringify({
   routine:{provider:'openai',model:'gpt-6-luna',effort:'max'},
   broad:{provider:'google',model:'gemini-3.8-flash-medium'},
-  complex:{provider:'openai',model:'gpt-6-sol',effort:'high'},
-  reviewer:{provider:'anthropic',model:'fable'}
+  complex:{provider:'openai',model:'gpt-6.1-sol',effort:'high'},
+  reviewer:{provider:'anthropic',model:'fable'},
+  pr_review:{provider:'openai',model:'gpt-6-astra',effort:'high'}
 }));
 const basePath = '/usr/bin:/bin';
 function run(command, args, opts={}) { return spawnSync(command, args, { encoding:'utf8', ...opts }); }
@@ -112,6 +117,157 @@ for (const [mode,expected,verify] of [
 ]) {
   check(`Gemini ${mode} → ${expected}`, () => { const r=fixture(mode,verify); assert(r.stdout.includes(`STATUS: ${expected}`), `observed ${r.stdout}\n${r.stderr}`); assert(!existsSync(join(r.dir,'fallback.txt')), 'old client fallback invoked'); if (expected !== 'complete') assert(r.status !== 0, 'non-complete exit 0'); if (mode==='missing') assert(!existsSync(join(r.dir,'output.txt')), 'fallback wrote file'); if (mode==='success') assert(r.stdout.includes('CHANGES:\noutput.txt') && r.stdout.includes('VERIFIED: approved verifier argv withheld; independently executed; exit 0'), 'missing diff or evidence'); });
 }
+// ---- codex-lane.sh: every Codex lane runs through one strict script ----
+function codexFixture(mode, laneArgs, options={}) {
+  const id=Math.random().toString(16).slice(2);
+  const dir=join(temp,(options.dirName ?? 'codex-'+mode)+'-'+id); mkdirSync(dir);
+  const git=(...a)=>run('git',['-C',dir,'-c','user.name=Fixture','-c','user.email=fixture@example.invalid',...a]);
+  run('git',['init','-q','-b','main',dir]); writeFileSync(join(dir,'README.md'),'fixture\n'); git('add','README.md'); git('commit','-qm','base');
+  if (options.feature !== false) { git('checkout','-qb','feat'); writeFileSync(join(dir,'feature.txt'),'x\n'); git('add','feature.txt'); git('commit','-qm','feature'); }
+  const shim=join(temp,'codex-shim-'+id); mkdirSync(shim);
+  const home=join(temp,'codex-home-'+id); mkdirSync(home);
+  const log=join(temp,'codex-log-'+id+'.json');
+  symlinkSync(process.execPath,join(shim,'node'));
+  if (mode !== 'missing') {
+    writeFileSync(join(shim,'codex'),`#!${process.execPath}
+const fs=require('fs'); const a=process.argv.slice(2);
+if(a[0]==='--version'){console.log('codex-cli 0.0.0');process.exit(0);}
+fs.writeFileSync(process.env.CODEX_LOG,JSON.stringify({argv:a,stdin:fs.readFileSync(0,'utf8')}));
+const cd=a[a.indexOf('--cd')+1], out=a[a.indexOf('--output-last-message')+1], mode=process.env.SHIM_MODE;
+if(mode==='auth'){console.error('Error: Not logged in. Run codex login.');process.exit(1);}
+if(mode==='hang'){setTimeout(()=>process.exit(0),30000);return;}
+if(mode==='hang-child'){require('child_process').spawn('sh',['-c','sleep 3; touch "$0"/LATE',cd],{stdio:'ignore'}).unref();setTimeout(()=>process.exit(0),30000);return;}
+if(mode==='write-sub') fs.writeFileSync(cd+'/sub/s.txt','changed\\n');
+if(mode==='write-sub-untracked') fs.writeFileSync(cd+'/sub/new.txt','edited\\n');
+if(mode==='orphan'){require('child_process').spawn('sh',['-c','trap "" TERM; sleep 3; echo late > "$0"/output.txt',cd],{stdio:'ignore'}).unref();}
+if(mode==='write'||mode==='review-mutate') fs.writeFileSync(cd+'/output.txt','x');
+fs.writeFileSync(out,{write:'Done','write-sub':'Done','review-echo':'End with: VERDICT: pass | fix-first\\nI could not finish.','review-template':'Partial notes\\nVERDICT: pass | fix-first','review-cr':'Notes\\nVERDICT: pa\\rss','review-crlf':'No findings.\\r\\nVERDICT: pass\\r\\n','write-sub-untracked':'Done','review-pass':'No findings.\\nVERDICT: pass','review-fixfirst':'- [major] a:1 bad\\nVERDICT: fix-first','review-mutate':'VERDICT: pass','review-noverdict':'Looks fine'}[mode]||'');
+process.exit(mode==='fail'?3:0);
+`); chmodSync(join(shim,'codex'),0o755);
+  }
+  options.prepare?.(dir, git);
+  if (options.config) { mkdirSync(join(home,'.claude/fable-advisor'),{recursive:true}); writeFileSync(join(home,'.claude/fable-advisor/lanes.json'),JSON.stringify(options.config)); }
+  const env={HOME:home,PATH:shim+':'+basePath,TMPDIR:options.tmpdir ?? temp,SHIM_MODE:mode,CODEX_LOG:log,...(options.env ?? {})};
+  const spec=options.input ?? 'OBJECTIVE: write output.txt\n';
+  const args=options.header!==undefined ? laneArgs : [...laneArgs,'--workdir',dir];
+  const input=options.header!==undefined ? `WORKDIR: ${dir}\n${options.header}---\n${spec}` : spec;
+  const r=run('bash',[join(root,'scripts/codex-lane.sh'),...args],{env,input,timeout:15000,killSignal:'SIGKILL'});
+  const head=run('git',['-C',dir,'rev-parse','HEAD']).stdout.trim();
+  return { ...r, dir, head, log: existsSync(log) ? JSON.parse(readFileSync(log,'utf8')) : null };
+}
+const flag=(log,name)=>log.argv[log.argv.indexOf(name)+1];
+check('codex lane: model and default effort come from configuration', () => {
+  const r=codexFixture('write',['routine']);
+  assert(r.status===0 && r.stdout.includes('STATUS: complete') && r.stdout.includes('LANE: luna-implementer · GPT-6 Luna (gpt-6-luna) · effort max (config)'), r.stdout+r.stderr);
+  assert(flag(r.log,'--model')==='gpt-6-luna' && flag(r.log,'--sandbox')==='workspace-write' && r.log.argv.includes('model_reasoning_effort="max"'), r.log.argv.join(' '));
+  assert(r.stdout.includes('CHANGED FILES:\noutput.txt'), r.stdout);
+});
+check('codex lane: spec text reaches codex literally and never runs', () => {
+  const input=`OBJECTIVE: test\n$(touch PWNED)\n\`touch PWNED2\`\nSPEC_EOF\nGOAL_EOF\n'quote" ; touch PWNED3\n`;
+  const r=codexFixture('write',['routine'],{input});
+  assert(r.log.stdin.includes(input) && !existsSync(join(r.dir,'PWNED')) && !existsSync(join(r.dir,'PWNED2')) && !existsSync(join(r.dir,'PWNED3')), 'spec was altered or executed');
+});
+for (const [mode,expected] of [['nochange','refused'],['fail','partial'],['missing','unavailable'],['auth','unavailable']]) {
+  check(`codex lane: ${mode} → ${expected}`, () => { const r=codexFixture(mode,['routine']); assert(r.status!==0 && r.stdout.includes(`STATUS: ${expected}`), r.stdout+r.stderr); });
+}
+check('codex lane: unsupported or unsafe effort is refused before codex runs', () => {
+  for (const effort of ['ultra','$(touch PWNED)','high; touch PWNED','']) {
+    const r=codexFixture('write',['routine','--effort',effort]);
+    if (effort==='') { assert(r.status===0 && r.stdout.includes('effort max (config)'), 'empty override must fall back to config'); continue; }
+    assert(r.status!==0 && r.stdout.includes('STATUS: unavailable') && r.log===null && !existsSync(join(r.dir,'PWNED')), `${effort}: ${r.stdout}`);
+  }
+  const ok=codexFixture('write',['complex','--effort','ultra']);
+  assert(ok.status===0 && ok.stdout.includes('LANE: sol-implementer · GPT-6.1 Sol (gpt-6.1-sol) · effort ultra (override)'), ok.stdout+ok.stderr);
+});
+check('codex lane: a pinned model keeps its own efforts and is reported', () => {
+  const r=codexFixture('write',['routine','--effort','ultra'],{config:{version:2,routine:{provider:'openai',model:'gpt-6.1-terra',effort:'high'}}});
+  assert(r.status===0 && r.stdout.includes('LANE: luna-implementer · GPT-6.1 Terra (gpt-6.1-terra) · effort ultra (override)') && flag(r.log,'--model')==='gpt-6.1-terra', r.stdout+r.stderr);
+});
+check('codex lane: nothing runs when the run directory cannot be created', () => {
+  const r=codexFixture('write',['routine'],{tmpdir:join(temp,'does-not-exist','deeper')});
+  assert(r.status!==0 && r.stdout.includes('STATUS: unavailable') && r.log===null, r.stdout+r.stderr);
+});
+check('codex lane: the built-in watchdog caps a hung run without a timeout binary', () => {
+  const started=Date.now();
+  const r=codexFixture('hang',['routine'],{env:{FABLE_CODEX_TIMEOUT:'1'}});
+  assert(r.status!==0 && r.stdout.includes('STATUS: timeout') && r.stdout.includes('1-second limit') && Date.now()-started<12000, r.stdout+r.stderr);
+});
+check('codex review: a login error is unavailable, not failed', () => {
+  const r=codexFixture('auth',['pr_review','--base','main']);
+  assert(r.status!==0 && r.stdout.includes('STATUS: unavailable'), r.stdout+r.stderr);
+});
+check('codex lane: runtime warnings on stderr never reach the model', () => {
+  const r=codexFixture('write',['routine'],{env:{NODE_DEBUG:'module'}});
+  assert(r.status===0 && r.stdout.includes('LANE: luna-implementer · GPT-6 Luna (gpt-6-luna) · effort max (config)') && flag(r.log,'--model')==='gpt-6-luna', r.stdout.slice(0,400));
+});
+check('codex lane: repositories with submodules still run', () => {
+  const r=codexFixture('write',['routine'],{prepare:(dir,git)=>{ const sub=join(dir,'sub'); run('git',['init','-q',sub]); writeFileSync(join(sub,'s.txt'),'s\n'); run('git',['-C',sub,'add','s.txt']); run('git',['-C',sub,'-c','user.name=F','-c','user.email=f@example.invalid','commit','-qm','s']); const sha=run('git',['-C',sub,'rev-parse','HEAD']).stdout.trim(); git('update-index','--add','--cacheinfo',`160000,${sha},sub`); git('commit','-qm','add submodule'); }});
+  assert(r.status===0 && r.stdout.includes('STATUS: complete'), r.stdout+r.stderr);
+});
+check('codex review: uncommitted and untracked files are listed as not reviewed', () => {
+  const r=codexFixture('review-pass',['pr_review','--base','main'],{prepare:dir=>writeFileSync(join(dir,'forgotten.js'),'x\n')});
+  assert(r.status===0 && r.stdout.includes('UNCOMMITTED (not part of the review):') && r.stdout.includes('forgotten.js'), r.stdout);
+});
+check('codex review: a pinned gpt-6-luna reviewer uses its own default effort', () => {
+  const r=codexFixture('review-pass',['pr_review','--base','main'],{config:{version:2,pr_review:{provider:'openai',model:'gpt-6-luna'}}});
+  assert(r.status===0 && r.stdout.includes('GPT-6 Luna (gpt-6-luna) · effort max (config)'), r.stdout+r.stderr);
+});
+check('codex review: the prompt names SHAs, never the ref text', () => {
+  const r=codexFixture('review-pass',['pr_review','--base','main']);
+  assert(!/\bmain\b/.test(r.log.stdin.split('Stated goal')[0]), 'ref name leaked into the prompt');
+});
+check('Codex agents pass values in the stdin header, never on the command line', () => { for (const file of ['agents/luna-implementer.md','agents/sol-implementer.md','agents/astra-reviewer.md']) { const s=read(file); assert(/^WORKDIR: </m.test(s) && /^---$/m.test(s) && !/--workdir '|--effort '|--base '/.test(s), file); } });
+check('codex lane: header values with quotes and spaces stay data', () => {
+  const r=codexFixture('write',['routine'],{dirName:"O'Brien dir $(touch PWNED)",header:'EFFORT: high\n'});
+  assert(r.status===0 && r.stdout.includes('effort high (override)') && flag(r.log,'--cd')===r.dir && !existsSync(join(temp,'PWNED')), r.stdout+r.stderr);
+  const v=codexFixture('review-pass',['pr_review'],{dirName:"rev'iew dir",header:'BASE: main\n'});
+  assert(v.status===0 && v.stdout.includes('REASON: VERDICT: pass'), v.stdout+v.stderr);
+  const bad=codexFixture('write',['routine'],{header:'COMMAND: rm -rf /\n'});
+  assert(bad.status!==0 && bad.stdout.includes('Unknown header line') && bad.log===null, bad.stdout);
+});
+check('codex lane: the watchdog kills what codex started', () => {
+  const r=codexFixture('hang-child',['routine'],{env:{FABLE_CODEX_TIMEOUT:'1'}});
+  spawnSync('sleep',['4']);
+  assert(r.stdout.includes('STATUS: timeout') && !existsSync(join(r.dir,'LATE')), 'descendant survived the timeout');
+});
+check('codex review: an echoed verdict template is not a verdict', () => {
+  for (const mode of ['review-echo','review-template','review-cr']) { const r=codexFixture(mode,['pr_review','--base','main']); assert(r.status!==0 && r.stdout.includes('STATUS: failed'), mode+': '+r.stdout); }
+});
+check('codex review: CRLF line endings still parse', () => { const r=codexFixture('review-crlf',['pr_review','--base','main']); assert(r.status===0 && r.stdout.includes('REASON: VERDICT: pass'), r.stdout); });
+check('codex lane: a SIGTERM-proof leftover is killed before the worktree is checked', () => {
+  const r=codexFixture('orphan',['routine']);
+  spawnSync('sleep',['4']);
+  assert(r.stdout.includes('STATUS: refused') && !existsSync(join(r.dir,'output.txt')), 'leftover process ran after the run ended: '+r.stdout);
+});
+check('codex lane: editing an untracked file inside a submodule counts as a change', () => {
+  const r=codexFixture('write-sub-untracked',['routine'],{prepare:(dir,git)=>{ const sub=join(dir,'sub'); run('git',['init','-q',sub]); writeFileSync(join(sub,'s.txt'),'s\n'); run('git',['-C',sub,'add','s.txt']); run('git',['-C',sub,'-c','user.name=F','-c','user.email=f@example.invalid','commit','-qm','s']); writeFileSync(join(sub,'new.txt'),'original\n'); const sha=run('git',['-C',sub,'rev-parse','HEAD']).stdout.trim(); git('update-index','--add','--cacheinfo',`160000,${sha},sub`); git('commit','-qm','add submodule'); }});
+  assert(r.status===0 && r.stdout.includes('STATUS: complete'), r.stdout+r.stderr);
+});
+check('codex lane: edits inside a submodule count as changes', () => {
+  const r=codexFixture('write-sub',['routine'],{prepare:(dir,git)=>{ const sub=join(dir,'sub'); run('git',['init','-q',sub]); writeFileSync(join(sub,'s.txt'),'s\n'); run('git',['-C',sub,'add','s.txt']); run('git',['-C',sub,'-c','user.name=F','-c','user.email=f@example.invalid','commit','-qm','s']); const sha=run('git',['-C',sub,'rev-parse','HEAD']).stdout.trim(); git('update-index','--add','--cacheinfo',`160000,${sha},sub`); git('commit','-qm','add submodule'); }});
+  assert(r.status===0 && r.stdout.includes('STATUS: complete') && r.stdout.includes('CHANGED FILES:\nsub'), r.stdout+r.stderr);
+});
+check('codex review: read-only, pinned to a SHA, verdict parsed', () => {
+  const r=codexFixture('review-pass',['pr_review','--base','main']);
+  assert(r.status===0 && r.stdout.includes('STATUS: complete') && r.stdout.includes('REASON: VERDICT: pass') && r.stdout.includes(`REVIEWED: ${r.head}`) && r.stdout.includes('LANE: astra-reviewer · GPT-6 Astra (gpt-6-astra) · effort high (config)'), r.stdout+r.stderr);
+  assert(flag(r.log,'--sandbox')==='read-only' && /git diff [0-9a-f]{40}\.\.\./.test(r.log.stdin) && r.log.stdin.includes(`...${r.head}`) && !/\.\.\.HEAD\b/.test(r.log.stdin), 'review not pinned or not read-only');
+  const f=codexFixture('review-fixfirst',['pr_review','--base','main']);
+  assert(f.status===0 && f.stdout.includes('REASON: VERDICT: fix-first'), f.stdout);
+});
+check('codex review: failures are never a pass', () => {
+  for (const [mode,args,opts,expected] of [
+    ['review-noverdict',['pr_review','--base','main'],{},'failed'],
+    ['review-mutate',['pr_review','--base','main'],{},'failed'],
+    ['review-pass',['pr_review','--base','does-not-exist'],{},'failed'],
+    ['review-pass',['pr_review','--base','$(touch PWNED)'],{},'failed'],
+    ['review-pass',['pr_review','--base','--output=PWNED'],{},'failed'],
+    ['review-pass',['pr_review','--base','main'],{feature:false},'nothing-to-review'],
+  ]) {
+    const r=codexFixture(mode,args,opts);
+    assert(r.status!==0 && r.stdout.includes(`STATUS: ${expected}`) && !existsSync(join(r.dir,'PWNED')), `${mode} ${args.join(' ')}: ${r.stdout}${r.stderr}`);
+    if (expected!=='failed' || mode==='review-pass') assert(r.log===null, `${args.join(' ')}: codex ran`);
+  }
+});
 check('scanner streams Git path lists larger than 1 MiB and rejects incomplete results', () => {
   const dir=join(temp,'scan-large'); mkdirSync(dir);
   const shim=join(temp,'scan-git-shim'); mkdirSync(shim);
@@ -246,8 +402,8 @@ check('Codex preflight unavailable in isolated PATH', () => {
   assert(r.status===1,'isolated preflight did not report unavailable');
   for (const file of ['agents/luna-implementer.md','agents/sol-implementer.md']) assert(read(file).includes('STATUS: unavailable'),file);
 });
-check('version-1 custom choices preserved', () => { const path=join(temp,'lanes-v1.json'); writeFileSync(path,JSON.stringify({version:1,routine:{provider:'openai',model:'custom-luna',effort:'low'},complex:{provider:'openai',model:'gpt-6-sol',effort:'high'},reviewer:{provider:'anthropic',model:'opus'}})); const r=run('node',[join(root,'scripts/resolve-lanes.mjs'),path]); assert(r.status===0,r.stderr); const value=JSON.parse(r.stdout); assert(value.broad.model==='gemini-3.8-flash-medium' && value.routine.model==='custom-luna' && value.routine.effort==='low' && value.reviewer.model==='opus','migration lost choices'); assert(JSON.parse(readFileSync(path,'utf8')).version===1,'resolver rewrote config'); });
-check('version-1 setup migration is backed up and atomic', () => { const target=join(temp,'save-test','lanes.json'); mkdirSync(dirname(target),{recursive:true}); const old={version:1,custom_setting:'keep',routine:{provider:'openai',model:'custom-luna',effort:'low'},complex:{provider:'openai',model:'gpt-6-sol',effort:'high'},reviewer:{provider:'anthropic',model:'opus'}}; writeFileSync(target,JSON.stringify(old)); const choices=join(temp,'migration-choices.json'); writeFileSync(choices,JSON.stringify({routine:old.routine,broad:{provider:'google',model:'gemini-3.8-flash-medium'},complex:old.complex,reviewer:old.reviewer})); const r=run('node',[join(root,'scripts/save-lanes.mjs'),choices,target]); assert(r.status===0,r.stderr); const output=JSON.parse(r.stdout), saved=JSON.parse(readFileSync(target,'utf8')); assert(saved.version===2 && saved.custom_setting==='keep' && saved.routine.model==='custom-luna' && saved.reviewer.model==='opus' && saved.broad.model==='gemini-3.8-flash-medium','bad migration'); assert(JSON.parse(readFileSync(output.backup,'utf8')).version===1,'missing backup'); });
+check('version-1 custom choices preserved', () => { const path=join(temp,'lanes-v1.json'); writeFileSync(path,JSON.stringify({version:1,routine:{provider:'openai',model:'custom-luna',effort:'low'},complex:{provider:'openai',model:'gpt-6.1-sol',effort:'high'},reviewer:{provider:'anthropic',model:'opus'}})); const r=run('node',[join(root,'scripts/resolve-lanes.mjs'),path]); assert(r.status===0,r.stderr); const value=JSON.parse(r.stdout); assert(value.broad.model==='gemini-3.8-flash-medium' && value.routine.model==='custom-luna' && value.routine.effort==='low' && value.reviewer.model==='opus','migration lost choices'); assert(JSON.parse(readFileSync(path,'utf8')).version===1,'resolver rewrote config'); });
+check('version-1 setup migration is backed up and atomic', () => { const target=join(temp,'save-test','lanes.json'); mkdirSync(dirname(target),{recursive:true}); const old={version:1,custom_setting:'keep',routine:{provider:'openai',model:'custom-luna',effort:'low'},complex:{provider:'openai',model:'gpt-6.1-sol',effort:'high'},reviewer:{provider:'anthropic',model:'opus'}}; writeFileSync(target,JSON.stringify(old)); const choices=join(temp,'migration-choices.json'); writeFileSync(choices,JSON.stringify({routine:old.routine,broad:{provider:'google',model:'gemini-3.8-flash-medium'},complex:old.complex,reviewer:old.reviewer,pr_review:{provider:'openai',model:'gpt-6-astra',effort:'high'}})); const r=run('node',[join(root,'scripts/save-lanes.mjs'),choices,target]); assert(r.status===0,r.stderr); const output=JSON.parse(r.stdout), saved=JSON.parse(readFileSync(target,'utf8')); assert(saved.version===2 && saved.custom_setting==='keep' && saved.routine.model==='custom-luna' && saved.reviewer.model==='opus' && saved.broad.model==='gemini-3.8-flash-medium','bad migration'); assert(JSON.parse(readFileSync(output.backup,'utf8')).version===1,'missing backup'); });
 check('invalid migration leaves existing config untouched', () => { const target=join(temp,'invalid-lanes.json'); const old='{"version":3,"custom":"keep"}'; writeFileSync(target,old); const choices=join(temp,'choices.json'); const r=run('node',[join(root,'scripts/save-lanes.mjs'),choices,target]); assert(r.status!==0,'accepted future version'); assert(readFileSync(target,'utf8')===old,'config changed'); });
 check('explicit legacy broad pin is preserved with a warning', () => { const target=join(temp,'legacy.json'); const old=JSON.stringify({version:2,broad:{provider:'google',model:'gemini-3.8-flash'}}); writeFileSync(target,old); const r=run('node',[join(root,'scripts/resolve-lanes.mjs'),target]); assert(r.status===0 && JSON.parse(r.stdout).broad.model==='gemini-3.8-flash' && r.stderr.includes('legacy'), 'legacy pin silently changed'); assert(readFileSync(target,'utf8')===old,'user config was rewritten'); });
 check('setup refuses legacy broad slug without overwriting', () => { const target=join(temp,'legacy-save.json'); const old=JSON.stringify({version:2,custom:'keep'}); writeFileSync(target,old); const choices=JSON.parse(readFileSync(join(temp,'choices.json'),'utf8')); choices.broad.model='gemini-3.8-flash'; const input=join(temp,'legacy-choice.json'); writeFileSync(input,JSON.stringify(choices)); const r=run('node',[join(root,'scripts/save-lanes.mjs'),input,target]); assert(r.status!==0 && readFileSync(target,'utf8')===old,'legacy migration lost user config'); });
@@ -331,7 +487,7 @@ check('old shell-string verifier is rejected without execution', () => {
   assert(r.status!==0 && r.stdout.includes('STATUS: partial') && !existsSync(join(r.dir,'injected.txt')),'legacy shell command executed');
 });
 check('malformed root and lane values are rejected without rewriting', () => {
-  const invalid=[null,[],42,'invalid',...['broad','routine','complex','reviewer'].flatMap(lane=>
+  const invalid=[null,[],42,'invalid',...['broad','routine','complex','reviewer','pr_review'].flatMap(lane=>
     [null,[],42,'invalid',{model:null},{model:42},{model:''},{provider:null},{effort:[]}].map(value=>({version:2,[lane]:value})))];
   const target=join(temp,'malformed.json');
   for(const value of invalid) {
@@ -362,7 +518,7 @@ check('saving choices preserves unused broad and reviewer effort metadata', () =
 });
 check('custom Codex models require explicit effort without changing config', () => {
   const target=join(temp,'custom-effort.json');
-  for (const lane of ['routine','complex']) {
+  for (const lane of ['routine','complex','pr_review']) {
     for (const effort of [undefined,'low']) {
       const raw=JSON.stringify({version:2,[lane]:{model:'custom-model',effort}}); writeFileSync(target,raw);
       const r=run(process.execPath,[join(root,'scripts/resolve-lanes.mjs'),target]);
@@ -371,14 +527,26 @@ check('custom Codex models require explicit effort without changing config', () 
       assert(readFileSync(target,'utf8')===raw,'config rewritten');
     }
   }
-  writeFileSync(target,JSON.stringify({routine:{model:'gpt-6-sol'},complex:{model:'gpt-6-luna'}}));
+  writeFileSync(target,JSON.stringify({routine:{model:'gpt-6.1-sol'},complex:{model:'gpt-6-luna'}}));
   const r=run(process.execPath,[join(root,'scripts/resolve-lanes.mjs'),target]);
   const value=JSON.parse(r.stdout);
   assert(r.status===0 && value.routine.effort==='medium' && value.complex.effort==='max','known model defaults lost');
+  writeFileSync(target,JSON.stringify({routine:{model:'gpt-6-sol'},complex:{model:'gpt-6-sol'}}));
+  const legacy=run(process.execPath,[join(root,'scripts/resolve-lanes.mjs'),target]);
+  const pinned=JSON.parse(legacy.stdout);
+  assert(legacy.status===0 && pinned.routine.effort==='medium' && pinned.complex.effort==='high','legacy gpt-6-sol pins lost their default effort');
+});
+check('known models keep their effort limits in any same-provider lane', () => {
+  let error; try { validateLanes({pr_review:{provider:'openai',model:'gpt-6-luna',effort:'ultra'}},catalog); } catch(e) { error=e; }
+  assert(error?.message.includes('Unsupported pr_review effort'),'ultra accepted for gpt-6-luna in pr_review');
+  validateLanes({pr_review:{provider:'openai',model:'gpt-6-luna',effort:'max'}},catalog);
+  const target=join(temp,'cross-lane.json'); writeFileSync(target,JSON.stringify({version:2,pr_review:{model:'gpt-6-luna'}}));
+  const r=run(process.execPath,[join(root,'scripts/resolve-lanes.mjs'),target]);
+  assert(r.status===0 && JSON.parse(r.stdout).pr_review.effort==='max',r.stdout+r.stderr);
 });
 check('effort-only choices are checked against their recommended model', () => {
   const target=join(temp,'effort-only.json');
-  for(const [lane,invalid,valid] of [['routine','ultra','low'],['complex','unsupported-effort','high']]) {
+  for(const [lane,invalid,valid] of [['routine','ultra','low'],['complex','unsupported-effort','high'],['pr_review','unsupported-effort','high']]) {
     const original=JSON.stringify({version:2,[lane]:{effort:invalid}});
     writeFileSync(target,original);
     const resolved=run(process.execPath,[join(root,'scripts/resolve-lanes.mjs'),target]);

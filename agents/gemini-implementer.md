@@ -28,14 +28,14 @@ The default is **`gemini-3.8-flash-medium`**, a Gemini 3.8 Flash variant confirm
 
 ## Contract and execution
 
-The spec carries objective, files, interfaces, constraints, verification commands, and any remaining gaps. Preserve all of it in a unique temporary file. From the target repository:
+The spec carries objective, files, interfaces, constraints, verification commands, and any remaining gaps. Preserve all of it in a unique temporary file. Pick a fresh heredoc delimiter for every run: `SPEC_EOF_` followed by 12 random hex characters, on both the opening and the closing line. Confirm no line of the text you paste equals it. A fixed delimiter would let a line in the pasted text close the heredoc early and run the rest as shell commands. From the target repository:
 
 ```bash
-SPEC_FILE=$(mktemp "${TMPDIR:-/tmp}/gemini-delegation.XXXXXX")
+SPEC_FILE=$(mktemp "${TMPDIR:-/tmp}/gemini-delegation.XXXXXX") || { echo 'STATUS: unavailable — could not write the spec file'; exit 1; }
 trap 'rm -f "$SPEC_FILE"' EXIT
-cat > "$SPEC_FILE" <<'SPEC_EOF'
+cat > "$SPEC_FILE" <<'SPEC_EOF_<12 random hex>' || { echo 'STATUS: unavailable — could not write the spec file'; exit 1; }
 [the complete delegated spec, including OBJECTIVE: and the exact verification command]
-SPEC_EOF
+SPEC_EOF_<same 12 hex>
 FABLE_WORKDIR="$(pwd)" \
   bash "${CLAUDE_PLUGIN_ROOT}/scripts/gemini-lane.sh" "$SPEC_FILE" \
   -- npm test
