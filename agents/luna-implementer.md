@@ -80,14 +80,18 @@ T=$(command -v gtimeout || command -v timeout || true)
 
 EFFORT="<value from the spec's REASONING line, or max if the spec names none>"
 
-${T:+$T 1200} codex exec \
+# Build the command as positional args, then add the timeout only when one exists.
+# Not `${T:+$T 1200} codex …`: zsh does not word-split that expansion, so it runs
+# "/usr/bin/timeout 1200" as one command name and fails before codex starts.
+set -- codex exec \
   --model gpt-6-luna \
   -c model_reasoning_effort="$EFFORT" \
   --sandbox workspace-write \
   --skip-git-repo-check \
   --cd "$(pwd)" \
   --output-last-message "$FINAL" \
-  - < "$SPEC"
+  -
+if [ -n "$T" ]; then "$T" 1200 "$@" < "$SPEC"; else "$@" < "$SPEC"; fi
 ```
 
 Flag discipline (non-negotiable):
@@ -98,7 +102,7 @@ Flag discipline (non-negotiable):
 | `-c model_reasoning_effort="$EFFORT"` | Always passed: the spec's rung when it names one, otherwise this lane's default (`max`). Never left to the user's codex config. |
 | `--skip-git-repo-check` + `--cd "$(pwd)"` | Deterministic working root; works outside git repos. |
 | `- < spec file` | Prompt via stdin. No quoting hazards, no truncated specs. |
-| `${T:+$T 1200}` | Twenty-minute wall clock (`max` is the default here, and it isn't fast) when `timeout`/`gtimeout` exists (macOS needs `brew install coreutils`); runs uncapped otherwise. On timeout, report `STATUS: timeout` with whatever landed. |
+| `"$T" 1200` (when found) | Twenty-minute wall clock (`max` is the default here, and it isn't fast) when `timeout`/`gtimeout` exists (macOS needs `brew install coreutils`); runs uncapped otherwise. On timeout, report `STATUS: timeout` with whatever landed. |
 
 `--model gpt-6-luna` selects the Luna capability tier — if the caller's spec names a different codex model, use that instead; the slug is a documented default, not a constant.
 
