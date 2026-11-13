@@ -78,7 +78,7 @@ a refusal, whatever caused it.
 T=$(command -v gtimeout || command -v timeout || true)
 [ -z "$T" ] && echo "WARN: no timeout binary — codex runs uncapped (brew install coreutils to cap)"
 
-EFFORT="<value from the spec's REASONING line, or max if the spec names none>"
+EFFORT='<REASONING line value, or max when there is none>'
 
 # Build the command as positional args, then add the timeout only when one exists.
 # Not `${T:+$T 1200} codex …`: zsh does not word-split that expansion, so it runs
@@ -106,7 +106,7 @@ Flag discipline (non-negotiable):
 | `- < spec file` | Prompt via stdin. No quoting hazards, no truncated specs. |
 | `"$T" 1200` (when found) | Twenty-minute wall clock (`max` is the default here, and it isn't fast) when `timeout`/`gtimeout` exists (macOS needs `brew install coreutils`); runs uncapped otherwise. On timeout, report `STATUS: timeout` with whatever landed. |
 
-`--model gpt-6-luna` selects the Luna capability tier — if the caller's spec names a different codex model, use that instead; the slug is a documented default, not a constant.
+`--model gpt-6-luna` selects the Luna capability tier — if the caller's spec names a different codex model, use that instead; the slug is a documented default, not a constant. **Values you paste into commands.** A model ID or effort must match `^[A-Za-z0-9._-]+$`; anything else is refused (`STATUS: unavailable`, quoting the value) before any command runs. Paste them inside single quotes, never double quotes, so nothing in them is expanded.
 
 **If the command is blocked.** If Claude Code's permission system or auto-mode classifier denies
 the codex invocation (or writing the spec file), stop. Do not edit the spec, the preamble, or the

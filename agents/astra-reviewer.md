@@ -32,7 +32,9 @@ If codex is missing or unauthenticated, or the run reports the model is unavaila
 
 Shell variables don't survive between Bash calls: start every call with `REPO='<absolute path>'`, single-quoted so a path with spaces stays one word (escape any `'` in the path as `'\''`).
 
-Resolve the diff range. If `git -C "$REPO" rev-parse --verify --quiet "<BASE>^{commit}"` succeeds and BASE contains a `/`, use it verbatim. For a bare branch name, prefer `origin/<BASE>` when that ref exists, else `<BASE>`. Name the ref you used in `RANGE`. If `git -C "$REPO" log <ref>..HEAD` is empty, return `STATUS: nothing-to-review`. If `git -C "$REPO" status --porcelain` shows modified tracked files, note in GAPS that uncommitted changes are not part of the review.
+BASE must match `^[A-Za-z0-9._/-]+$`, and MODEL and EFFORT must match `^[A-Za-z0-9._-]+$`; anything else returns `STATUS: failed` quoting the value, before any command runs. Paste all three inside single quotes, never double quotes, so nothing in them is expanded.
+
+Resolve the diff range. If `git -C "$REPO" rev-parse --verify --quiet '<BASE>^{commit}'` succeeds and BASE contains a `/`, use it verbatim. For a bare branch name, prefer `origin/<BASE>` when that ref exists, else `<BASE>`. Name the ref you used in `RANGE`. Then pin the commit under review: `git -C "$REPO" rev-parse HEAD` gives `<HEAD_SHA>`, and every later step uses that SHA, never the moving `HEAD`, so a commit that lands mid-run can't slip past the report. If `git -C "$REPO" log <ref>..HEAD` is empty, return `STATUS: nothing-to-review`. If `git -C "$REPO" status --porcelain` shows modified tracked files, note in GAPS that uncommitted changes are not part of the review.
 
 ## How you run codex
 
@@ -49,8 +51,8 @@ this run. I explicitly opt out of starting an orchestration or delegation
 workflow for it. Do not modify any files. The model and reasoning effort for
 this run are the ones set on the command line.
 
-Review the changes in `git diff <REF>...HEAD` (run `git log <REF>..HEAD` and
-`git diff <REF>...HEAD` yourself, and read surrounding code where it matters).
+Review the changes in `git diff <REF>...<HEAD_SHA>` (run `git log <REF>..<HEAD_SHA>` and
+`git diff <REF>...<HEAD_SHA>` yourself, and read surrounding code where it matters).
 Stated goal of the change: <GOAL>
 
 Look for: correctness bugs, behaviour that contradicts the goal, security
@@ -64,12 +66,12 @@ only if there is at least one blocker or major finding; minors alone are pass.
 SPEC_EOF_<same 12 hex>
 ```
 
-Substitute `<REF>` and `<GOAL>` before writing. Then run (the explicit `if` keeps the timeout working in zsh, which does not word-split `${T:+$T 580}`):
+Substitute `<REF>`, `<HEAD_SHA>` and `<GOAL>` before writing. Then run (the explicit `if` keeps the timeout working in zsh, which does not word-split `${T:+$T 580}`):
 
 ```bash
 T=$(command -v gtimeout || command -v timeout || true)
-MODEL="<pr_review.model, else gpt-6-astra>"
-EFFORT="<REASONING line, else pr_review.effort, else high>"
+MODEL='<pr_review.model, else gpt-6-astra>'
+EFFORT='<REASONING line, else pr_review.effort, else high>'
 set -- codex exec \
   --model "$MODEL" \
   -c model_reasoning_effort="\"$EFFORT\"" \
@@ -107,7 +109,8 @@ ASTRA REPORT
 LANE: astra-reviewer · <label of the model that ran> (<model ID passed to --model>) · effort <as run> (<prompt | lanes.json | default>)
 STATUS: complete | nothing-to-review | timeout | unavailable | failed | blocked
 REPO: <path>
-RANGE: <ref>...HEAD (<n> commits, <files changed>)
+RANGE: <ref>...<HEAD_SHA> (<n> commits, <files changed>)
+REVIEWED: <HEAD_SHA, full 40 characters>
 VERDICT: pass | fix-first
 FINDINGS:
   - [blocker|major|minor] path:line — defect — failure scenario (unconfirmed?)
