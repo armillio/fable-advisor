@@ -13,7 +13,7 @@ Claude Code lets every subagent run on a different model — and lets the sessio
 | Routine | **GPT-6 Luna** (effort `max` by default) | `luna-implementer` agent (default) | The spec fully determines the outcome — Codex does the typing via the [Codex CLI](https://github.com/openai/codex) |
 | Broad context | **Gemini 3.8 Flash** | `gemini-implementer` agent | Broad repository/design-system context or cross-module pattern discovery determines the work — Antigravity CLI uses your account to do the typing |
 | High-complexity | **GPT-6.2 Sol** (effort `high` by default) | `sol-implementer` agent | One-off tasks where judgment the spec can't capture decides the outcome: subtle concurrency, hard debugging, security-sensitive paths, wide refactors |
-| Pre-PR review | **GPT-6.2 Astra** (effort `high` by default) | `astra-reviewer` agent | Once before every pull request opens: a read-only cross-vendor review of the committed branch against its goal, returning pass / fix-first. |
+| Pre-PR review | **GPT-6.2 Astra** (effort `high` by default) | `astra-reviewer` agent | Once before each pull request the orchestrator opens: a read-only cross-vendor review of the committed branch against its goal, returning pass / fix-first. |
 | Review | **Fable 5.2** | `fable-advisor` agent | Commitment boundaries, and **always once at the end** — the advisor reviews the accumulated changes before the architect reports done |
 
 **The Codex lanes have default reasoning efforts.** Luna runs at `max`, Sol at `high` and the Astra pre-PR reviewer at `high` unless the spec's `REASONING:` line overrides them (`low … max`, plus `ultra` on Sol and Astra). The Antigravity adapter pins the Medium model variant without a separate effort override. The session and advisor run at whatever `/effort` you set.
@@ -42,7 +42,7 @@ claude plugin marketplace update fable-advisor
 claude plugin update fable-advisor@fable-advisor
 ```
 
-Then pick whichever model you want as the architect — the plugin doesn't choose it for you. The advisor is pinned to Fable 5.2 regardless.
+Then pick whichever model you want as the architect — the plugin doesn't choose it for you. The advisor runs Fable 5.2 by default; `/fable-advisor:setup` can switch it to Opus or Sonnet.
 
 **Lite mode — one file, 30 seconds.** Don't want the full pattern? Copy [`agents/fable-advisor.md`](agents/fable-advisor.md) into `~/.claude/agents/` and keep your session on Sonnet. You get advisor consults at commitment boundaries without the orchestration layer (see "Advisor-only mode" below).
 

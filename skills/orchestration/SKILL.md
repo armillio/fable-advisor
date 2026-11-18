@@ -1,6 +1,6 @@
 ---
 name: orchestration
-description: Capability-based routing doctrine for a Claude Code session architect. Route routine implementation to Luna, broad-context implementation to Gemini, complex implementation to Sol, every completed deliverable to the read-only Fable advisor for clean-context final review, and every pull request to the read-only Astra reviewer before it opens. Use for decomposition, implementation delegation, escalation, verification, race mode, setup choices, and commitment-boundary consultation.
+description: Capability-based routing doctrine for a Claude Code session architect. Route routine implementation to Luna, broad-context implementation to Gemini, complex implementation to Sol, every completed deliverable to the read-only Fable advisor for clean-context final review, and every pull request the orchestrator opens to the read-only pre-PR reviewer (Astra by default) first. Use for decomposition, implementation delegation, escalation, verification, race mode, setup choices, and commitment-boundary consultation.
 ---
 
 # Orchestration — the architect's routing doctrine
@@ -78,7 +78,7 @@ Consult `fable-advisor` before architecture decisions, migrations, API shapes, m
 
 ## Pre-PR review
 
-Every pull request gets one more gate after the Fable final review: GPT-6.2 Astra reviews the committed branch through `astra-reviewer`, in a read-only Codex sandbox.
+Every pull request the orchestrator opens gets one more gate after the Fable final review: the configured `pr_review` model (GPT-6.2 Astra unless `lanes.json` pins another) reviews the committed branch through `astra-reviewer`, in a read-only Codex sandbox.
 
 - **Pass it** the repo path (absolute; the agent's cwd may be another checkout), the PR's base as a remote-qualified ref (`origin/main`, or `fork/main` when `origin` is upstream), a one- or two-line goal taken from the user's ask, and a `REASONING:` rung only when overriding `high` (raise it for security-sensitive paths, migrations or wide refactors).
 - **Act on the verdict.** `fix-first` means at least one blocker or major. Those go back to the implementer lane as a corrected spec, get re-verified, and the branch is reviewed again. Minor findings are fixed or noted with a reason. Open the PR only on a `pass` for the branch's final commit, confirmed by its `REVIEWED:` SHA equalling `git rev-parse HEAD`: any change after a `pass`, minor fixes included, needs another review.
@@ -87,7 +87,7 @@ Every pull request gets one more gate after the Fable final review: GPT-6.2 Astr
 - **No PR without it.** `unavailable`, a second `timeout`, `failed` or `blocked` means the PR does not open; report the status and let the user decide.
 - **Fable again only if the fixes grew.** Fixes that stay inside Astra's findings need re-verification, not a second Fable review; fixes that change behaviour beyond the findings go back through `fable-advisor` first.
 
-Fable reads the diff against the goal in a clean context; Astra is a different vendor's frontier model reading the same branch, so the last gate before reviewers see the code is a cross-vendor one.
+Fable reads the diff against the goal in a clean context; the `pr_review` lane runs a different vendor's model (OpenAI's, through Codex) reading the same branch, so the last gate before reviewers see the code is a cross-vendor one.
 
 ## Optional Codex plugin
 
