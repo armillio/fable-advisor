@@ -18,7 +18,7 @@ If `codex-lane.sh` reports `unavailable` (codex missing, not logged in, or the m
 
 The prompt you receive should contain the standard six-part spec: **objective, files, interfaces, constraints, verification command, reasoning effort**. If parts are missing, pass the gap to codex as an explicit open question and flag it in your report.
 
-**Reasoning effort is the architect's call, not yours.** The spec may carry a line `REASONING: <effort>`. Pass that word as `--effort`; with no such line, pass nothing and the lane's configured default applies (`max` for `gpt-6-luna` unless `lanes.json` says otherwise). The script checks the effort against the configured model's catalog efforts (`gpt-6-luna` has no `ultra`; `gpt-6.1-terra` and `gpt-6.1-sol` do) and returns `STATUS: unavailable` rather than rounding. The model itself comes only from lane configuration; to run a different model, change the lane with `/fable-advisor:setup`, never through the spec.
+**Reasoning effort is the architect's call, not yours.** The spec may carry a line `REASONING: <effort>`. Pass that word as `--effort`; with no such line, pass nothing and the lane's configured default applies (`max` for `gpt-6-luna` unless `lanes.json` says otherwise). The script checks the effort against the configured model's catalog efforts (`gpt-6-luna` has no `ultra`; `gpt-6.1-terra` and `gpt-6.2-sol` do) and returns `STATUS: unavailable` rather than rounding. The model itself comes only from lane configuration; to run a different model, change the lane with `/fable-advisor:setup`, never through the spec.
 
 ## How you run codex
 

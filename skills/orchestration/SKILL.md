@@ -13,9 +13,9 @@ The session is the architect: it owns requirements, architecture, decomposition,
 |---|---|---|---|
 | `routine` | GPT-6 Luna (`gpt-6-luna`, effort `max` by default) | `luna-implementer` | Fully specified, mechanical changes; straightforward features, wiring, CRUD, pattern-following tests. Default when the spec determines the answer. |
 | `broad` | Gemini 3.8 Flash (`gemini-3.8-flash-medium`) | `gemini-implementer` | Broad repository context, frontend/UI or design-system consistency, pattern discovery or propagation across modules. Context-heavy but not unusually hard reasoning. |
-| `complex` | GPT-6.1 Sol (`gpt-6.1-sol`, effort `high` by default) | `sol-implementer` | Difficult unresolved judgment; subtle concurrency, races, security/cryptography, high-risk migrations or data loss, hard sync semantics, or debugging that resisted a capable attempt. |
+| `complex` | GPT-6.2 Sol (`gpt-6.2-sol`, effort `high` by default) | `sol-implementer` | Difficult unresolved judgment; subtle concurrency, races, security/cryptography, high-risk migrations or data loss, hard sync semantics, or debugging that resisted a capable attempt. |
 | `reviewer` | Fable 5.2 (`fable`) | `fable-advisor` | Read-only commitment-boundary advice and mandatory final review. Never implementation. |
-| `pr_review` | GPT-6 Astra (`gpt-6-astra`, effort `high` by default) | `astra-reviewer` | Read-only cross-vendor review of the committed branch, once per round before a pull request opens. Never implementation. |
+| `pr_review` | GPT-6.2 Astra (`gpt-6.2-astra`, effort `high` by default) | `astra-reviewer` | Read-only cross-vendor review of the committed branch, once per round before a pull request opens. Never implementation. |
 
 The broad wrapper invokes Antigravity CLI (`agy`) with the user's signed-in account, never an API-key fallback. Explicit legacy `gemini-3.8-flash` pins require a user-confirmed setup change to an Antigravity slug; do not silently remap them.
 
@@ -23,7 +23,7 @@ The wrappers are lightweight Claude subagents; the external model actually write
 
 ### Read user configuration
 
-Before delegation, run the bundled read-only resolver (`node "${CLAUDE_PLUGIN_ROOT}/scripts/resolve-lanes.mjs"`) or read `~/.claude/fable-advisor/lanes.json` with equivalent rules. Version 1 remains valid: preserve its `routine`, `complex`, and `reviewer` choices and resolve a missing `broad` to the catalog's `gemini-3.8-flash-medium` recommendation. Version 2 adds `broad` and `pr_review`; missing individual keys use built-in defaults (`pr_review` resolves to `gpt-6-astra` at `high`). Do not rewrite user configuration as part of routing. Reject incompatible provider/model pairings rather than silently running a different CLI. Use the configured model and effort in the spec/delegation label, with the reviewer model passed to the Agent call. Suggest `/fable-advisor:setup` once if no file exists. Never assume a setup choice proves the CLI is authenticated or the model accessible.
+Before delegation, run the bundled read-only resolver (`node "${CLAUDE_PLUGIN_ROOT}/scripts/resolve-lanes.mjs"`) or read `~/.claude/fable-advisor/lanes.json` with equivalent rules. Version 1 remains valid: preserve its `routine`, `complex`, and `reviewer` choices and resolve a missing `broad` to the catalog's `gemini-3.8-flash-medium` recommendation. Version 2 adds `broad` and `pr_review`; missing individual keys use built-in defaults (`pr_review` resolves to `gpt-6.2-astra` at `high`). Do not rewrite user configuration as part of routing. Reject incompatible provider/model pairings rather than silently running a different CLI. Use the configured model and effort in the spec/delegation label, with the reviewer model passed to the Agent call. Suggest `/fable-advisor:setup` once if no file exists. Never assume a setup choice proves the CLI is authenticated or the model accessible.
 
 ### Four routing questions
 
@@ -53,7 +53,7 @@ Emit judgment, not volume: the architect writes specs and evaluates diffs, rathe
 
 Codex lanes retain their existing effort contract. Luna defaults to `max` and supports `low`, `medium`, `high`, `xhigh`, `max`; Sol defaults to `high` and also supports `ultra`; Astra (`pr_review`) defaults to `high` and supports the same rungs as Sol. The spec's optional `REASONING: <effort>` overrides the default exactly; do not round unsupported rungs. Use low/medium for mechanical work, high/xhigh for interactions, max for truly hard work, and Sol's ultra only when worth its extra cost. The Antigravity adapter selects the Medium Gemini model variant by slug and has **no separate effort override**; do not translate Codex effort values. The architect and advisor inherit Claude session effort.
 
-Label each delegation in the UI with the actual model (`GPT-6 Luna · max: ...`, `Gemini 3.8 Flash: ...`, `GPT-6.1 Sol · high: ...`, `Fable 5.2: final review`, `GPT-6 Astra · high: pre-PR review`), and announce the routing choice in one line. Retain the lane report's `LANE:` line when summarizing so the model that actually ran remains visible.
+Label each delegation in the UI with the actual model (`GPT-6 Luna · max: ...`, `Gemini 3.8 Flash: ...`, `GPT-6.2 Sol · high: ...`, `Fable 5.2: final review`, `GPT-6.2 Astra · high: pre-PR review`), and announce the routing choice in one line. Retain the lane report's `LANE:` line when summarizing so the model that actually ran remains visible.
 
 ## Spec contract
 
@@ -78,7 +78,7 @@ Consult `fable-advisor` before architecture decisions, migrations, API shapes, m
 
 ## Pre-PR review
 
-Every pull request gets one more gate after the Fable final review: GPT-6 Astra reviews the committed branch through `astra-reviewer`, in a read-only Codex sandbox.
+Every pull request gets one more gate after the Fable final review: GPT-6.2 Astra reviews the committed branch through `astra-reviewer`, in a read-only Codex sandbox.
 
 - **Pass it** the repo path (absolute; the agent's cwd may be another checkout), the PR's base as a remote-qualified ref (`origin/main`, or `fork/main` when `origin` is upstream), a one- or two-line goal taken from the user's ask, and a `REASONING:` rung only when overriding `high` (raise it for security-sensitive paths, migrations or wide refactors).
 - **Act on the verdict.** `fix-first` means at least one blocker or major. Those go back to the implementer lane as a corrected spec, get re-verified, and the branch is reviewed again. Minor findings are fixed or noted with a reason. Open the PR only on a `pass` for the branch's final commit, confirmed by its `REVIEWED:` SHA equalling `git rev-parse HEAD`: any change after a `pass`, minor fixes included, needs another review.
