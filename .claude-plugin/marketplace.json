@@ -11,7 +11,7 @@
     {
       "name": "fable-advisor",
       "source": "./",
-      "description": "Architect-as-orchestrator on your choice of session model: Luna handles routine implementation, Gemini handles broad-context implementation, Sol handles complex implementation, Fable 5.2 reviews before anything ships, and GPT-6 Astra reviews every branch before its pull request opens."
+      "description": "Architect-as-orchestrator on your choice of session model: Luna handles routine implementation, Gemini handles broad-context implementation, Sol handles complex implementation, Fable 5.2 reviews before anything ships, and GPT-6.2 Astra reviews every branch before its pull request opens."
     }
   ]
 }

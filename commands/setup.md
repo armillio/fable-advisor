@@ -22,9 +22,9 @@ Configure the five capability lanes; the parent Claude Code session model is **n
      "version": 2,
      "routine": { "provider": "openai", "model": "gpt-6-luna", "effort": "max" },
      "broad": { "provider": "google", "model": "gemini-3.8-flash-medium" },
-     "complex": { "provider": "openai", "model": "gpt-6.1-sol", "effort": "high" },
+     "complex": { "provider": "openai", "model": "gpt-6.2-sol", "effort": "high" },
      "reviewer": { "provider": "anthropic", "model": "fable" },
-     "pr_review": { "provider": "openai", "model": "gpt-6-astra", "effort": "high" }
+     "pr_review": { "provider": "openai", "model": "gpt-6.2-astra", "effort": "high" }
    }
    ```
 7. Confirm all five lane choices, show the config path, and state whether a version-1 backup was made. Mention any CLI/auth warning prominently. Setup does not invoke implementation and does not change the current session architect.
